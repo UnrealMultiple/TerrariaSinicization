@@ -106,13 +106,13 @@ public class UnpackBundle
         AssetWorkspace.GenerateAssetsFileLookup();
         foreach (var asset in AssetWorkspace.LoadedAssets)
         {
+
             AssetContainer cont = asset.Value;
             AssetNameUtils.GetDisplayNameFast(AssetWorkspace, cont, true, out string assetName, out string typeName);
             assetName = PathUtils.ReplaceInvalidPathChars(assetName);
-            if (assetName.StartsWith("zh-Hans"))
-            {
-                LoadAssets.Add($"{assetName}-{Path.GetFileName(cont.FileInstance.path)}-{cont.PathId}", cont);
-            }
+            var assetPath = $"{assetName}-{Path.GetFileName(cont.FileInstance.path)}-{cont.PathId}";
+            Console.WriteLine(assetPath);
+            LoadAssets.Add(assetPath, cont);
         }
 
 
