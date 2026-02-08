@@ -139,7 +139,7 @@ public class AssetWorkspace
         LoadedFiles.Add(fromFile);
         LoadedFileNames.Add(fromFile.path.ToLower());
 
-        foreach (AssetFileInfo info in fromFile.file.AssetInfos)
+        foreach (AssetFileInfo info in fromFile.file.GetAssetsOfType(AssetClassID.TextAsset))
         {
             AssetContainer cont = new AssetContainer(info, fromFile);
             LoadedAssets.Add(cont.AssetId, cont);

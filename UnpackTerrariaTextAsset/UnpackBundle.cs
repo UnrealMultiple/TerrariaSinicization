@@ -1,5 +1,12 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using AssetsTools.NET.Texture;
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using System.Text;
+using Image = SixLabors.ImageSharp.Image;
 
 namespace UnpackTerrariaTextAsset;
 
@@ -111,24 +118,68 @@ public class UnpackBundle
             AssetNameUtils.GetDisplayNameFast(AssetWorkspace, cont, true, out string assetName, out string typeName);
             assetName = PathUtils.ReplaceInvalidPathChars(assetName);
             var assetPath = $"{assetName}-{Path.GetFileName(cont.FileInstance.path)}-{cont.PathId}";
-            Console.WriteLine(assetPath);
             LoadAssets.Add(assetPath, cont);
         }
 
+    }
 
+    public void BatchImport()
+    {
+        var dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ImportDir);
 
-        //CompressBundle("data.unity3d.import", AssetBundleCompressionType.LZ4);
+        var files = Directory.GetFiles(dir);
+        foreach (var file in files)
+        {
+            string fileName = Path.GetFileNameWithoutExtension(file);
+            if (LoadAssets.TryGetValue(fileName, out AssetContainer? cont) && cont != null)
+            {
+                AssetTypeValueField baseField = AssetWorkspace.GetBaseField(cont)!;
+                byte[] byteData = File.ReadAllBytes(file);
+                baseField["m_Script"].AsByteArray = byteData;
+
+                byte[] savedAsset = baseField.WriteToByteArray();
+
+                var replacer = new AssetsReplacerFromMemory(
+                    cont.PathId, cont.ClassId, cont.MonoId, savedAsset);
+                AssetWorkspace.AddReplacer(cont.FileInstance, replacer, new MemoryStream(savedAsset));
+            }
+        }
+    }
+
+    public void BatchExport()
+    {
+        var dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ExportDir);
+
+        foreach (var (_, cont) in LoadAssets)
+        {
+            AssetTypeValueField baseField = AssetWorkspace.GetBaseField(cont)!;
+            var name = baseField?["m_Name"]?.AsString;
+            var byteData = baseField?["m_Script"]?.AsByteArray;
+            if(name == null || byteData == null) {  continue; }
+
+            name = PathUtils.ReplaceInvalidPathChars(name);
+
+            string extension = ".json";
+            string ucontExt = TextAssetHelper.GetUContainerExtension(cont);
+            if (ucontExt != string.Empty)
+            {
+                extension = ucontExt;
+            }
+
+            string file = Path.Combine(dir, $"{name}-{Path.GetFileName(cont.FileInstance.path)}-{cont.PathId}{extension}");
+
+            File.WriteAllBytes(file, byteData);
+        }
     }
 
     public void CompressBundle(string path, AssetBundleCompressionType type)
     {
-
         using FileStream fs = File.Open(path, FileMode.Create);
         using AssetsFileWriter w = new AssetsFileWriter(fs);
-        BundleInst.file.Pack(BundleInst.file.Reader, w, type, true);
+        BundleInst.file.Pack(BundleInst.file.Reader, w, type, false);
     }
 
-    public void BatchExportDump()
+    private void BatchExportDump()
     {
         var dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ExportDir);
 
@@ -153,7 +204,7 @@ public class UnpackBundle
         }
     }
 
-    public void BatchImportDump()
+    private void BatchImportDump()
     {
         var dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ImportDir);
         var files = Directory.GetFiles(dir);
@@ -239,13 +290,6 @@ public class UnpackBundle
         using FileStream fs = File.Open(path, FileMode.Create);
         using AssetsFileWriter w = new AssetsFileWriter(fs);
         BundleInst.file.Write(w, replacers.ToList());
-    }
-
-    public void SaveBundleMemory(Stream ms)
-    {
-        List<BundleReplacer> replacers = Workspace.GetReplacers();
-        using var w = new AssetsFileWriter(ms);
-        BundleInst.file.Write(w, [.. replacers]); ;
     }
 
 
