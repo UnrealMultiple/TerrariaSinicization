@@ -1,8 +1,9 @@
-﻿using AssetsTools.NET;
+using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using System.Diagnostics.CodeAnalysis;
+using UnpackTerrariaTextAsset.Helpers;
 
-namespace UnpackTerrariaTextAsset;
+namespace UnpackTerrariaTextAsset.Workspace;
 
 public class UnityContainer
 {
@@ -111,7 +112,7 @@ public class UnityContainer
         actualFile = null;
         baseField = null;
 
-        string gameDir = PathUtils.GetAssetsFileDirectory(file);
+        string gameDir = Utility.GetAssetsFileDirectory(file);
         if (gameDir == null)
         {
             return false;

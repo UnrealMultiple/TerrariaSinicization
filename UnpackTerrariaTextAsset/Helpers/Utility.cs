@@ -1,10 +1,58 @@
-﻿using AssetsTools.NET;
+using System;
+using System.IO;
 using System.Text.RegularExpressions;
+using AssetsTools.NET;
+using AssetsTools.NET.Extra;
 
-namespace UnpackTerrariaTextAsset;
+namespace UnpackTerrariaTextAsset.Helpers;
 
-public static class FileTypeDetector
+public static class Utility
 {
+    public static string ReplaceInvalidPathChars(string filename)
+    {
+        return string.Join("_", filename.Split(Path.GetInvalidFileNameChars()));
+    }
+
+    public static string GetFilePathWithoutExtension(string path)
+    {
+        string? directoryName = Path.GetDirectoryName(path);
+        if (directoryName != null)
+        {
+            return Path.Combine(directoryName, Path.GetFileNameWithoutExtension(path));
+        }
+
+        return string.Empty;
+    }
+
+    public static string GetAssetsFileDirectory(AssetsFileInstance fileInst)
+    {
+        if (fileInst.parentBundle != null)
+        {
+            string dir = Path.GetDirectoryName(fileInst.parentBundle.path)!;
+
+            string? upDir = Path.GetDirectoryName(dir);
+            string? upDir2 = Path.GetDirectoryName(upDir ?? string.Empty);
+            if (upDir != null && upDir2 != null)
+            {
+                if (Path.GetFileName(upDir) == "aa" && Path.GetFileName(upDir2) == "StreamingAssets")
+                {
+                    dir = Path.GetDirectoryName(upDir2)!;
+                }
+            }
+
+            return dir;
+        }
+        else
+        {
+            string dir = Path.GetDirectoryName(fileInst.path)!;
+            if (fileInst.name == "unity default resources" || fileInst.name == "unity_builtin_extra")
+            {
+                dir = Path.GetDirectoryName(dir)!;
+            }
+            return dir;
+        }
+    }
+
     public static DetectedFileType DetectFileType(string filePath)
     {
         using (FileStream fs = File.OpenRead(filePath))

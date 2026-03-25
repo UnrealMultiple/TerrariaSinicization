@@ -1,7 +1,4 @@
-﻿using LibCpp2IL.Elf;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using System.ComponentModel.DataAnnotations;
+using UnpackTerrariaTextAsset.Core;
 
 namespace UnpackTerrariaTextAsset;
 
@@ -9,150 +6,170 @@ class Program
 {
     static void Main(string[] args)
     {
-        var Arguements = ParseArguements(Environment.GetCommandLineArgs());
-        if (Arguements.TryGetValue("-export", out var target))
-        {
-            if (!File.Exists(target))
-            {
-                Console.WriteLine("目标文件不存在！");
-                return;
-            }
+        var arguments = ParseArguments(Environment.GetCommandLineArgs());
 
-            var unpack = new UnpackBundle();
-            unpack.OpenFiles(target);
-            unpack.BatchExport();
+        if (arguments.TryGetValue("-export", out var target))
+        {
+            HandleExport(target);
         }
 
-        if (Arguements.TryGetValue("-import", out var arg))
+        if (arguments.TryGetValue("-import", out var arg))
         {
-            var sp = arg.Split(' ');
-            if (sp.Length == 2)
-            {
-                var bundle = sp[0];
-                var outPath = sp[1];
-                var ins = new UnpackBundle();
-                if (!File.Exists(bundle))
-                {
-                    Console.WriteLine($"未找到文件: {bundle}");
-                    return;
-                }
-                ins.OpenFiles(bundle);
-                ins.BatchImport();
-                ins.SaveToMemory();
-                ins.SaveBundle("temp");
-                var cop = new UnpackBundle();
-                cop.OpenFiles("temp");
-                cop.CompressBundle(outPath, AssetsTools.NET.AssetBundleCompressionType.LZ4);
-            }
+            HandleImport(arg);
         }
 
-        if(Arguements.TryGetValue("-patch", out arg))
+        if (arguments.TryGetValue("-localize", out arg))
         {
-            var sp = arg.Split(" ");
-            var bundle = sp[0];
-            var outPath = sp[1];
-            var ins = new UnpackBundle();
-            if (!File.Exists(bundle))
-            {
-                Console.WriteLine($"未找到文件: {bundle}");
-                return;
-            }
-            ins.OpenFiles(bundle);
-            ins.BatchExport();
-            Sinicization();
-            ins.BatchImport();
-            ins.SaveToMemory();
-            ins.SaveBundle("temp");
-            var cop = new UnpackBundle();
-            cop.OpenFiles("temp");
-            cop.CompressBundle(outPath, AssetsTools.NET.AssetBundleCompressionType.LZ4);
+            HandleLocalize(arg);
         }
 
+        if (arguments.TryGetValue("-diff", out arg))
+        {
+            HandleDiff(arg);
+        }
     }
 
-    public static void Sinicization()
+    private static void HandleExport(string targetPath)
     {
-        var files = Directory.GetFiles(UnpackBundle.ExportDir);
-        var dic = files.Select(f => new { File = f, Name = Path.GetFileNameWithoutExtension(f) })
-            .Where(x => x.Name.StartsWith("zh-Hans") || x.Name.StartsWith("fr-FR"))
-            .GroupBy(x =>
-            {
-                var name = x.Name;
-                var resourcePart = name.Contains('.') ? name[(name.IndexOf('.') + 1)..] : name[(name.IndexOf('-') + 1)..];
-                var lastDashIndex = resourcePart.LastIndexOf('-');
-                if (lastDashIndex > 0)
-                {
-                    resourcePart = resourcePart.Substring(0, lastDashIndex);
-                }
-                return resourcePart;
-            })
-            .Where(g => g.Count() == 2)
-            .ToDictionary(
-                g => Path.GetFileName(g.First(x => x.Name.StartsWith("zh-Hans")).File),
-                g => Path.GetFileName(g.First(x => x.Name.StartsWith("fr-FR")).File)
-            );
-        foreach (var (zh_file, fr_file) in dic)
+        if (!File.Exists(targetPath))
         {
-            using var fs = new FileStream(Path.Combine(UnpackBundle.ImportDir, fr_file), FileMode.Create);
-            fs.Write(File.ReadAllBytes(Path.Combine(UnpackBundle.ExportDir, zh_file)));
-            fs.Close();
-        }
-        var en = files.FirstOrDefault(x => Path.GetFileName(x).StartsWith("en-US-resources.assets"));
-        if (en == null)
+            Console.WriteLine("目标文件不存在！");
             return;
-        ModifyLanguage(en);
-        var fr = dic.Values.FirstOrDefault(x => Path.GetFileName(x).StartsWith("fr-FR-resources.assets"));
-        if (fr == null)
+        }
+
+        var unpack = new UnpackBundle();
+        unpack.OpenFiles(targetPath);
+        unpack.BatchExport();
+        Console.WriteLine("导出完成！");
+    }
+
+    private static void HandleImport(string args)
+    {
+        var parts = args.Split(' ');
+        if (parts.Length < 2)
+        {
+            Console.WriteLine("-import 参数格式错误！");
+            Console.WriteLine("正确用法: -import <data.unity3d路径> <输出文件路径>");
             return;
-        ModifyLanguage(Path.Combine(UnpackBundle.ImportDir, fr));
-        
+        }
+
+        var bundlePath = parts[0];
+        var outputPath = parts[1];
+
+        if (!File.Exists(bundlePath))
+        {
+            Console.WriteLine($"未找到文件: {bundlePath}");
+            return;
+        }
+
+        ProcessAndSaveBundle(bundlePath, outputPath, unpack =>
+        {
+            unpack.BatchImport();
+        });
     }
 
-    static void ModifyLanguage(string file)
+    private static void HandleLocalize(string args)
     {
-        var content = File.ReadAllText(file);
-        var json = JsonConvert.DeserializeObject<JObject>(content);
-        json!["Language"]!["French"] = "简体中文";
-        File.WriteAllText(Path.Combine(UnpackBundle.ImportDir, Path.GetFileName(file)), JsonConvert.SerializeObject(json, Formatting.Indented));
+        var parts = args.Split(' ');
+        if (parts.Length < 3)
+        {
+            Console.WriteLine("-localize 参数格式错误！");
+            Console.WriteLine("正确用法: -localize <data.unity3d路径> <本地化文件夹路径> <输出文件路径>");
+            return;
+        }
+
+        var bundlePath = parts[0];
+        var localizationFolder = parts[1];
+        var outputPath = parts[2];
+
+        if (!File.Exists(bundlePath))
+        {
+            Console.WriteLine($"未找到文件: {bundlePath}");
+            return;
+        }
+
+        if (!Directory.Exists(localizationFolder))
+        {
+            Console.WriteLine($"未找到本地化文件夹: {localizationFolder}");
+            return;
+        }
+
+        ProcessAndSaveBundle(bundlePath, outputPath, unpack =>
+        {
+            unpack.BatchLocalizationReplace(localizationFolder);
+        });
+
+        Console.WriteLine($"本地化完成！输出文件: {outputPath}");
     }
 
-    public static Dictionary<string, string> ParseArguements(string[] args)
+    private static void HandleDiff(string args)
     {
-        string text = null;
-        string text2 = "";
-        Dictionary<string, string> dictionary = new Dictionary<string, string>();
+        var parts = args.Split(' ');
+        if (parts.Length < 2)
+        {
+            Console.WriteLine("-diff 参数格式错误！");
+            Console.WriteLine("正确用法: -diff <data.unity3d路径> <本地化文件夹路径>");
+            return;
+        }
+
+        var bundlePath = parts[0];
+        var localizationFolder = parts[1];
+
+        if (!File.Exists(bundlePath))
+        {
+            Console.WriteLine($"未找到文件: {bundlePath}");
+            return;
+        }
+
+        var unpack = new UnpackBundle();
+        unpack.OpenFiles(bundlePath);
+        unpack.DiffAndSyncLocalization(localizationFolder);
+        Console.WriteLine("差异同步完成！");
+    }
+
+    private static void ProcessAndSaveBundle(string bundlePath, string outputPath, Action<UnpackBundle> processAction)
+    {
+        var unpack = new UnpackBundle();
+        unpack.OpenFiles(bundlePath);
+        processAction(unpack);
+        unpack.SaveAndCompressBundle(outputPath, AssetsTools.NET.AssetBundleCompressionType.LZ4);
+    }
+
+    public static Dictionary<string, string> ParseArguments(string[] args)
+    {
+        string? currentOption = null;
+        var currentValue = "";
+        var dictionary = new Dictionary<string, string>();
+
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i].Length == 0)
-            {
                 continue;
-            }
+
             if (args[i][0] == '-' || args[i][0] == '+')
             {
-                if (text != null)
+                if (currentOption != null)
                 {
-                    dictionary.Add(text.ToLower(), text2);
-                    text2 = "";
+                    dictionary.Add(currentOption.ToLowerInvariant(), currentValue);
                 }
-                text = args[i];
-                text2 = "";
+                currentOption = args[i];
+                currentValue = "";
             }
             else
             {
-                if (text2 != "")
+                if (currentValue.Length > 0)
                 {
-                    text2 += " ";
+                    currentValue += " ";
                 }
-                text2 += args[i];
+                currentValue += args[i];
             }
         }
-        if (text != null)
+
+        if (currentOption != null)
         {
-            dictionary.Add(text.ToLower(), text2);
-            text2 = "";
+            dictionary.Add(currentOption.ToLowerInvariant(), currentValue);
         }
+
         return dictionary;
     }
-
-
 }

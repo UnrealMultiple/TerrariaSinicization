@@ -1,8 +1,9 @@
-﻿using AssetsTools.NET;
+using AssetsTools.NET;
 using Newtonsoft.Json.Linq;
 using System.Text;
+using UnpackTerrariaTextAsset.Workspace;
 
-namespace UnpackTerrariaTextAsset;
+namespace UnpackTerrariaTextAsset.Helpers;
 
 public class AssetImportExport
 {

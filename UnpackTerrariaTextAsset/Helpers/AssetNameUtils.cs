@@ -1,7 +1,8 @@
-﻿using AssetsTools.NET;
+using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using UnpackTerrariaTextAsset.Workspace;
 
-namespace UnpackTerrariaTextAsset;
+namespace UnpackTerrariaTextAsset.Helpers;
 
 public static class AssetNameUtils
 {

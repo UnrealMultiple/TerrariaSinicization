@@ -1,8 +1,9 @@
-﻿using AssetsTools.NET;
+using AssetsTools.NET;
 using AssetsTools.NET.Cpp2IL;
 using AssetsTools.NET.Extra;
+using UnpackTerrariaTextAsset.Helpers;
 
-namespace UnpackTerrariaTextAsset;
+namespace UnpackTerrariaTextAsset.Workspace;
 
 public enum AssetsFileChangeTypes
 {
@@ -258,7 +259,7 @@ public class AssetWorkspace
                     bool isMonoBehaviour = cont.ClassId == (int)AssetClassID.MonoBehaviour || cont.ClassId < 0;
                     if (isMonoBehaviour && !setMonoTempGeneratorsYet && !fileInst.file.Metadata.TypeTreeEnabled)
                     {
-                        string dataDir = PathUtils.GetAssetsFileDirectory(fileInst);
+                        string dataDir = Utility.GetAssetsFileDirectory(fileInst);
                         bool success = SetMonoTempGenerators(dataDir);
                         if (!success)
                         {

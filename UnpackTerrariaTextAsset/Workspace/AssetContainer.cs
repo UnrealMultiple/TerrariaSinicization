@@ -1,7 +1,7 @@
-﻿using AssetsTools.NET;
+using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 
-namespace UnpackTerrariaTextAsset;
+namespace UnpackTerrariaTextAsset.Workspace;
 
 public class AssetContainer
 {

@@ -1,9 +1,9 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace UnpackTerrariaTextAsset;
+namespace UnpackTerrariaTextAsset.Workspace;
 
 public static class ConfigurationManager
 {

@@ -1,18 +1,14 @@
-﻿using AssetsTools.NET;
+using AssetsTools.NET;
 using AssetsTools.NET.Extra;
-using Avalonia;
-using Avalonia.Media;
-using Avalonia.Styling;
-using System.Collections.ObjectModel;
 
-namespace UnpackTerrariaTextAsset;
+namespace UnpackTerrariaTextAsset.Workspace;
 
 public class BundleWorkspace
 {
     public BundleFileInstance? BundleInst { get; set; }
     public AssetsManager am { get; }
 
-    public ObservableCollection<BundleWorkspaceItem> Files { get; }
+    public List<BundleWorkspaceItem> Files { get; }
     public Dictionary<string, BundleWorkspaceItem> FileLookup { get; }
     public HashSet<string> RemovedFiles { get; }
 
@@ -21,7 +17,7 @@ public class BundleWorkspace
         BundleInst = null;
         am = new AssetsManager();
 
-        Files = new ObservableCollection<BundleWorkspaceItem>();
+        Files = new List<BundleWorkspaceItem>();
         FileLookup = new Dictionary<string, BundleWorkspaceItem>();
         RemovedFiles = new HashSet<string>();
     }
@@ -46,7 +42,14 @@ public class BundleWorkspace
             string name = dirInf.Name;
             long startAddress = dirInf.Offset;
             long length = dirInf.DecompressedSize;
-            SegmentStream stream = new SegmentStream(BundleInst.file.DataReader.BaseStream, startAddress, length);
+            
+            byte[] buffer = new byte[length];
+            Stream baseStream = BundleInst.file.DataReader.BaseStream;
+            baseStream.Position = startAddress;
+            int bytesRead = baseStream.Read(buffer, 0, (int)length);
+            
+            MemoryStream ms = new MemoryStream(buffer);
+            SegmentStream stream = new SegmentStream(ms, 0, bytesRead);
             BundleWorkspaceItem wsItem = new BundleWorkspaceItem(name, name, false, (dirInf.Flags & 0x04) != 0, false, stream);
             Files.Add(wsItem);
             FileLookup[name] = wsItem;
@@ -140,40 +143,8 @@ public class BundleWorkspaceItem
     public bool IsNew { get; }
     public bool IsSerialized { get; }
     public bool IsRemoved { get; set; }
-    // the difference between IsNew and IsModified is
-    // IsNew is only if it was a newly imported file
-    // but IsModified comes from edits by the info window
     public bool IsModified { get; }
     public Stream Stream { get; }
-
-    private static SolidColorBrush AssetsBrushDark = new SolidColorBrush(Avalonia.Media.Color.Parse("#b17fd7"));
-    private static SolidColorBrush AssetsBrushLight = new SolidColorBrush(Avalonia.Media.Color.Parse("#642c8f"));
-    private static SolidColorBrush RessBrushDark = new SolidColorBrush(Avalonia.Media.Color.Parse("#569cd6"));
-    private static SolidColorBrush RessBrushLight = new SolidColorBrush(Avalonia.Media.Color.Parse("#0000ff"));
-    private static SolidColorBrush ResourceBrushDark = new SolidColorBrush(Avalonia.Media.Color.Parse("#ffd700"));
-    private static SolidColorBrush ResourceBrushLight = new SolidColorBrush(Avalonia.Media.Color.Parse("#9e7e00"));
-    private static SolidColorBrush EtcBrushDark = new SolidColorBrush(Avalonia.Media.Color.Parse("#ee00ee"));
-    private static SolidColorBrush EtcBrushLight = new SolidColorBrush(Avalonia.Media.Color.Parse("#ee00ee"));
-
-    private static SolidColorBrush AssetsBrush => ThemeHandler.UseDarkTheme ? AssetsBrushDark : AssetsBrushLight;
-    private static SolidColorBrush RessBrush => ThemeHandler.UseDarkTheme ? RessBrushDark : RessBrushLight;
-    private static SolidColorBrush ResourceBrush => ThemeHandler.UseDarkTheme ? ResourceBrushDark : ResourceBrushLight;
-    private static SolidColorBrush EtcBrush => ThemeHandler.UseDarkTheme ? EtcBrushDark : EtcBrushLight;
-
-    public IBrush Color
-    {
-        get
-        {
-            if (IsSerialized)
-                return AssetsBrush;
-            else if (Name.EndsWith(".resS"))
-                return RessBrush;
-            else if (Name.EndsWith(".resource"))
-                return ResourceBrush;
-            else
-                return EtcBrush;
-        }
-    }
 
     public BundleWorkspaceItem(
         string name, string originalName, bool isNew,
@@ -186,33 +157,11 @@ public class BundleWorkspaceItem
         IsSerialized = isSerialized;
         IsModified = isModified;
         Stream = stream;
-        //Replacer = null;
-
         IsRemoved = false;
     }
 
     public override string ToString()
     {
         return Name + (IsModified ? "*" : "");
-    }
-}
-
-public static class ThemeHandler
-{
-    private static bool _useDarkTheme;
-    public static bool UseDarkTheme
-    {
-        get
-        {
-            return _useDarkTheme;
-        }
-        set
-        {
-            if (Application.Current == null)
-                return;
-
-            Application.Current.RequestedThemeVariant = value ? ThemeVariant.Dark : ThemeVariant.Light;
-            _useDarkTheme = value;
-        }
     }
 }
