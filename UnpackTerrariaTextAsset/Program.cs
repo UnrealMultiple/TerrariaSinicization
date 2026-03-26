@@ -27,6 +27,11 @@ class Program
         {
             HandleDiff(arg);
         }
+
+        if (arguments.TryGetValue("-replacefonts", out arg))
+        {
+            HandleReplaceFonts(arg);
+        }
     }
 
     private static void HandleExport(string targetPath)
@@ -125,6 +130,40 @@ class Program
         unpack.OpenFiles(bundlePath);
         unpack.DiffAndSyncLocalization(localizationFolder);
         Console.WriteLine("差异同步完成！");
+    }
+
+    private static void HandleReplaceFonts(string args)
+    {
+        var parts = args.Split(' ');
+        if (parts.Length < 3)
+        {
+            Console.WriteLine("-replacefonts 参数格式错误！");
+            Console.WriteLine("正确用法: -replacefonts <data.unity3d路径> <font_work文件夹路径> <输出文件路径>");
+            return;
+        }
+
+        var bundlePath = parts[0];
+        var fontWorkFolder = parts[1];
+        var outputPath = parts[2];
+
+        if (!File.Exists(bundlePath))
+        {
+            Console.WriteLine($"未找到文件: {bundlePath}");
+            return;
+        }
+
+        if (!Directory.Exists(fontWorkFolder))
+        {
+            Console.WriteLine($"未找到 font_work 文件夹: {fontWorkFolder}");
+            return;
+        }
+
+        ProcessAndSaveBundle(bundlePath, outputPath, unpack =>
+        {
+            unpack.BatchReplaceFonts(fontWorkFolder);
+        });
+
+        Console.WriteLine($"字体替换完成！输出文件: {outputPath}");
     }
 
     private static void ProcessAndSaveBundle(string bundlePath, string outputPath, Action<UnpackBundle> processAction)
