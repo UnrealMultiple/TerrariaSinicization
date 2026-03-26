@@ -145,6 +145,12 @@ public class AssetWorkspace
             AssetContainer cont = new AssetContainer(info, fromFile);
             LoadedAssets.Add(cont.AssetId, cont);
         }
+        
+        foreach (AssetFileInfo info in fromFile.file.GetAssetsOfType(AssetClassID.Texture2D))
+        {
+            AssetContainer cont = new AssetContainer(info, fromFile);
+            LoadedAssets.Add(cont.AssetId, cont);
+        }
 
         if (loadDependencies)
         {

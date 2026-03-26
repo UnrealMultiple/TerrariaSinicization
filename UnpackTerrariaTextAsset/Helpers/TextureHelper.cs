@@ -1,67 +1,119 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
-using SixLabors.ImageSharp.PixelFormats;
+using System;
+using System.IO;
+using System.Linq;
 using UnpackTerrariaTextAsset.Workspace;
 
 namespace UnpackTerrariaTextAsset.Helpers;
 
-/// <summary>
-/// 纹理辅助函数 - 从 UABEA TexturePlugin 改编
-/// </summary>
 public static class TextureHelper
 {
-    public static bool IsPo2(int x)
+    public static AssetTypeValueField GetByteArrayTexture(AssetWorkspace workspace, AssetContainer tex)
     {
-        return (x & (x - 1)) == 0;
-    }
+        AssetTypeTemplateField textureTemp = workspace.GetTemplateField(tex);
+        AssetTypeTemplateField image_data = textureTemp.Children.FirstOrDefault(f => f.Name == "image data");
+        if (image_data == null)
+            return null;
+        image_data.ValueType = AssetValueType.ByteArray;
 
-    public static int GetMaxMipCount(int width, int height)
-    {
-        int mips = 1;
-        while (width > 1 || height > 1)
+        AssetTypeTemplateField m_PlatformBlob = textureTemp.Children.FirstOrDefault(f => f.Name == "m_PlatformBlob");
+        if (m_PlatformBlob != null)
         {
-            width >>= 1;
-            height >>= 1;
-            mips++;
+            AssetTypeTemplateField m_PlatformBlob_Array = m_PlatformBlob.Children[0];
+            m_PlatformBlob_Array.ValueType = AssetValueType.ByteArray;
         }
-        return mips;
-    }
 
-    public static byte[] GetPlatformBlob(AssetTypeValueField baseField)
-    {
-        AssetTypeValueField platformBlobField = baseField["m_PlatformBlob"];
-        if (platformBlobField != null && !platformBlobField.IsDummy)
-        {
-            AssetTypeValueField dataField = platformBlobField["data"];
-            if (dataField != null && !dataField.IsDummy)
-            {
-                return dataField.AsByteArray;
-            }
-        }
-        return null;
+        AssetTypeValueField baseField = textureTemp.MakeValue(tex.FileReader, tex.FilePosition);
+        return baseField;
     }
 
     public static bool GetResSTexture(TextureFile texFile, AssetsFileInstance fileInst)
     {
-        // 检查是否是 resS 流式纹理
-        if (!string.IsNullOrEmpty(texFile.m_StreamData.path))
+        TextureFile.StreamingInfo streamInfo = texFile.m_StreamData;
+        if (streamInfo.path != null && streamInfo.path != "" && fileInst.parentBundle != null)
         {
-            string resSName = Path.GetFileName(texFile.m_StreamData.path);
-            // 简单检查：如果路径不为空且文件存在
+            string searchPath = streamInfo.path;
+            if (searchPath.StartsWith("archive:/"))
+                searchPath = searchPath.Substring(9);
+
+            searchPath = Path.GetFileName(searchPath);
+
+            AssetBundleFile bundle = fileInst.parentBundle.file;
+
+            AssetsFileReader reader = bundle.DataReader;
+            AssetBundleDirectoryInfo[] dirInf = bundle.BlockAndDirInfo.DirectoryInfos;
+            for (int i = 0; i < dirInf.Length; i++)
+            {
+                AssetBundleDirectoryInfo info = dirInf[i];
+                if (info.Name == searchPath)
+                {
+                    reader.Position = info.Offset + (long)streamInfo.offset;
+                    texFile.pictureData = reader.ReadBytes((int)streamInfo.size);
+                    texFile.m_StreamData.offset = 0;
+                    texFile.m_StreamData.size = 0;
+                    texFile.m_StreamData.path = "";
+                    return true;
+                }
+            }
+            return false;
+        }
+        else
+        {
             return true;
         }
-        return true;
     }
 
-    public static byte[] GetRawTextureBytes(TextureFile texFile, AssetsFileInstance fileInst)
+    public static byte[] GetRawTextureBytes(TextureFile texFile, AssetsFileInstance inst)
     {
-        // 获取原始纹理字节数据
-        return texFile.GetTextureData(fileInst);
+        string rootPath = Path.GetDirectoryName(inst.path);
+        if (texFile.m_StreamData.size != 0 && texFile.m_StreamData.path != string.Empty)
+        {
+            string fixedStreamPath = texFile.m_StreamData.path;
+            if (inst.parentBundle == null && fixedStreamPath.StartsWith("archive:/"))
+            {
+                fixedStreamPath = Path.GetFileName(fixedStreamPath);
+            }
+            if (!Path.IsPathRooted(fixedStreamPath) && rootPath != null)
+            {
+                fixedStreamPath = Path.Combine(rootPath, fixedStreamPath);
+            }
+            if (File.Exists(fixedStreamPath))
+            {
+                Stream stream = File.OpenRead(fixedStreamPath);
+                stream.Position = (long)texFile.m_StreamData.offset;
+                texFile.pictureData = new byte[texFile.m_StreamData.size];
+                stream.Read(texFile.pictureData, 0, (int)texFile.m_StreamData.size);
+            }
+            else
+            {
+                return null;
+            }
+        }
+        return texFile.pictureData;
     }
 
-    public static AssetTypeValueField GetByteArrayTexture(AssetWorkspace workspace, AssetContainer cont)
+    public static byte[] GetPlatformBlob(AssetTypeValueField texBaseField)
     {
-        return workspace.GetBaseField(cont);
+        AssetTypeValueField m_PlatformBlob = texBaseField["m_PlatformBlob"];
+        byte[] platformBlob = null;
+        if (!m_PlatformBlob.IsDummy)
+        {
+            platformBlob = m_PlatformBlob["Array"].AsByteArray;
+        }
+        return platformBlob;
+    }
+
+    public static bool IsPo2(int n)
+    {
+        return n > 0 && ((n & (n - 1)) == 0);
+    }
+
+    public static int GetMaxMipCount(int width, int height)
+    {
+        int widthMipCount = (int)Math.Log2(width) + 1;
+        int heightMipCount = (int)Math.Log2(height) + 1;
+        return Math.Max(widthMipCount, heightMipCount);
     }
 }

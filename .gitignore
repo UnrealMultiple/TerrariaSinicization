@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# font_work - 字体工作区
+# XnaFontRebuilder 编译输出
+font_work/XnaFontRebuilder/bin/
+font_work/XnaFontRebuilder/obj/
