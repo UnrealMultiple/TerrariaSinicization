@@ -34,6 +34,22 @@ jobs:
         cd UnpackTerrariaTextAsset
         dotnet build -c Release
     
+    - name: Debug - Check directories and files
+      run: |
+        Write-Host "Current directory: $(Get-Location)"
+        Write-Host "---"
+        Write-Host "Root directory contents:"
+        Get-ChildItem
+        Write-Host "---"
+        Write-Host "Resources directory:"
+        if (Test-Path Resources) { Get-ChildItem Resources }
+        Write-Host "---"
+        Write-Host "Localization directory:"
+        if (Test-Path Localization) { Get-ChildItem Localization }
+        Write-Host "---"
+        Write-Host "font_work directory:"
+        if (Test-Path font_work) { Get-ChildItem font_work }
+    
     - name: Create output directory
       run: |
         New-Item -ItemType Directory -Force -Path output
@@ -41,18 +57,29 @@ jobs:
     - name: Localize and replace fonts
       run: |
         cd UnpackTerrariaTextAsset\bin\Release\net8.0
+        Write-Host "Working directory: $(Get-Location)"
+        Write-Host "Running command..."
         dotnet UnpackTerrariaTextAsset.dll -localize ..\..\..\Resources\data.unity3d ..\..\..\Localization ..\..\..\output\data_localized.unity3d -f ..\..\..\font_work
+        Write-Host "Command completed"
     
-    - name: Check if file exists
+    - name: Debug - Check output
       run: |
-        Get-ChildItem -Recurse output
-        if (Test-Path output\data_localized.unity3d) {
-          Write-Host "File found!"
-          $size = (Get-Item output\data_localized.unity3d).Length
-          Write-Host "File size: $size bytes"
+        Write-Host "Current directory: $(Get-Location)"
+        Write-Host "---"
+        Write-Host "All directories:"
+        Get-ChildItem -Directory
+        Write-Host "---"
+        Write-Host "Checking for output directory:"
+        if (Test-Path output) {
+          Write-Host "output directory exists"
+          Write-Host "Contents of output:"
+          Get-ChildItem -Recurse output
         } else {
-          Write-Host "File NOT found!"
+          Write-Host "output directory does NOT exist"
         }
+        Write-Host "---"
+        Write-Host "Checking all directories for data_localized.unity3d:"
+        Get-ChildItem -Recurse -Filter "*.unity3d" -ErrorAction SilentlyContinue
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
