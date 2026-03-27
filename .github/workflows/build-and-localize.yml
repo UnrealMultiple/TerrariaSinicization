@@ -55,7 +55,7 @@ jobs:
         }
     
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: localized-data-unity3d
         path: output/data_localized.unity3d
