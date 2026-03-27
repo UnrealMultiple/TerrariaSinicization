@@ -50,16 +50,41 @@ jobs:
         Write-Host "font_work directory:"
         if (Test-Path font_work) { Get-ChildItem font_work }
     
+    - name: Setup absolute paths
+      id: paths
+      run: |
+        $rootDir = Get-Location
+        $bundlePath = Join-Path $rootDir "Resources\data.unity3d"
+        $localizationPath = Join-Path $rootDir "Localization"
+        $outputDir = Join-Path $rootDir "output"
+        $outputPath = Join-Path $outputDir "data_localized.unity3d"
+        $fontWorkPath = Join-Path $rootDir "font_work"
+        
+        Write-Host "Root directory: $rootDir"
+        Write-Host "Bundle path: $bundlePath"
+        Write-Host "Localization path: $localizationPath"
+        Write-Host "Output directory: $outputDir"
+        Write-Host "Output path: $outputPath"
+        Write-Host "Font work path: $fontWorkPath"
+        
+        echo "ROOT_DIR=$rootDir" >> $env:GITHUB_OUTPUT
+        echo "BUNDLE_PATH=$bundlePath" >> $env:GITHUB_OUTPUT
+        echo "LOCALIZATION_PATH=$localizationPath" >> $env:GITHUB_OUTPUT
+        echo "OUTPUT_DIR=$outputDir" >> $env:GITHUB_OUTPUT
+        echo "OUTPUT_PATH=$outputPath" >> $env:GITHUB_OUTPUT
+        echo "FONT_WORK_PATH=$fontWorkPath" >> $env:GITHUB_OUTPUT
+    
     - name: Create output directory
       run: |
-        New-Item -ItemType Directory -Force -Path output
+        New-Item -ItemType Directory -Force -Path "${{ steps.paths.outputs.OUTPUT_DIR }}"
     
     - name: Localize and replace fonts
       run: |
-        cd UnpackTerrariaTextAsset\bin\Release\net8.0
+        $exeDir = Join-Path "${{ steps.paths.outputs.ROOT_DIR }}" "UnpackTerrariaTextAsset\bin\Release\net8.0"
+        cd $exeDir
         Write-Host "Working directory: $(Get-Location)"
         Write-Host "Running command..."
-        dotnet UnpackTerrariaTextAsset.dll -localize ..\..\..\Resources\data.unity3d ..\..\..\Localization ..\..\..\output\data_localized.unity3d -f ..\..\..\font_work
+        dotnet UnpackTerrariaTextAsset.dll -localize "${{ steps.paths.outputs.BUNDLE_PATH }}" "${{ steps.paths.outputs.LOCALIZATION_PATH }}" "${{ steps.paths.outputs.OUTPUT_PATH }}" -f "${{ steps.paths.outputs.FONT_WORK_PATH }}"
         Write-Host "Command completed"
     
     - name: Debug - Check output
@@ -85,5 +110,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: localized-data-unity3d
-        path: output/data_localized.unity3d
+        path: ${{ steps.paths.outputs.OUTPUT_PATH }}
         if-no-files-found: error
