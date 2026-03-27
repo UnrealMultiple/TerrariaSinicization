@@ -18,13 +18,6 @@
 3. **推送到 GitHub**，Actions 会自动运行
 4. **下载成果**：在 Actions 运行完成后，从 "Artifacts" 中下载 `localized-data-unity3d`
 
-### 方法二：本地构建
-
-详细使用说明请查看各子项目文档：
-
-- **[UnpackTerrariaTextAsset/README.md](./UnpackTerrariaTextAsset/README.md)** - 主工具使用文档
-- **[font\_work/README.md](./font_work/README.md)** - 字体制作工具文档
-
 ## 📂 项目结构
 
 ```
@@ -157,9 +150,9 @@ git push origin improve-translation
 
 ## 📚 详细文档
 
-- **[UnpackTerrariaTextAsset/README.md](./UnpackTerrariaTextAsset/README.md)** - 资源处理工具完整文档
-- **[font\_work/README.md](./font_work/README.md)** - 字体制作工具文档
-- **[font\_work/XnaFontRebuilder/README.md](./font_work/XnaFontRebuilder/README.md)** - 字体格式转换工具
+- **[UnpackTerrariaTextAsset](./UnpackTerrariaTextAsset/README.md)** - 资源处理工具完整文档
+- **[font\_work](./font_work/README.md)** - 字体制作工具文档
+- **[XnaFontRebuilder](./font_work/XnaFontRebuilder/README.md)** - 字体格式转换工具
 
 ## 🛠️ 系统要求
 
