@@ -24,9 +24,12 @@ jobs:
         dotnet build -c Release
     
     - name: Generate fonts using FontXnaBuilder.ps1
+      shell: powershell
       run: |
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $PSDefaultParameterValues['*:Encoding'] = 'utf8'
         cd font_work
-        powershell -ExecutionPolicy Bypass -File .\FontXnaBuilder.ps1
+        .\FontXnaBuilder.ps1
     
     - name: Build UnpackTerrariaTextAsset
       run: |
