@@ -1,0 +1,44 @@
+name: Build and Localize
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    
+    - name: Build XnaFontRebuilder
+      run: |
+        cd font_work\XnaFontRebuilder
+        dotnet build -c Release
+    
+    - name: Generate fonts using FontXnaBuilder.ps1
+      run: |
+        cd font_work
+        powershell -ExecutionPolicy Bypass -File .\FontXnaBuilder.ps1
+    
+    - name: Build UnpackTerrariaTextAsset
+      run: |
+        dotnet build -c Release
+    
+    - name: Localize and replace fonts
+      run: |
+        cd UnpackTerrariaTextAsset\bin\Release\net8.0
+        dotnet UnpackTerrariaTextAsset.dll -localize ..\..\..\Resources\data.unity3d ..\..\..\Localization ..\..\..\output\data_localized.unity3d -f ..\..\..\font_work
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: localized-data-unity3d
+        path: output/data_localized.unity3d
