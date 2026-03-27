@@ -14,71 +14,33 @@ class Program
 
         try
         {
-            // 处理命令模式
             string firstArg = args[0];
-            if (firstArg == "-export" || firstArg == "-e")
+            if (firstArg == "--convert" || firstArg == "-c")
             {
                 if (args.Length < 2)
                 {
-                    Console.WriteLine("Usage: XnaFontRebuilder --export <input.txt> [output.csv]");
+                    Console.WriteLine("Usage: XnaFontRebuilder --convert <input.fnt> [output.txt] [options]");
+                    Console.WriteLine("Options: --line-height <value>, --ascii-extra-spacing <value>, --character-spacing-compensation <value>");
                     return 1;
                 }
-                string inputPath = args[1];
-                string outputPath = args.Length > 2 ? args[2] : Path.ChangeExtension(inputPath, ".csv");
-                ExportChars(inputPath, outputPath);
-                Console.WriteLine("Exported: " + outputPath);
+
+                var options = ParseBaseConversionArgs(args.Skip(1).ToArray());
+                ConvertBmFontToXnaTxt(options);
+                Console.WriteLine($"Generated: {options.OutputPath}");
                 return 0;
             }
-            else if (firstArg == "simple" || firstArg == "-es")
-            {
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("Usage: XnaFontRebuilder --export-simple <input.txt> [output.csv]");
-                    return 1;
-                }
-                string inputPath = args[1];
-                string outputPath = args.Length > 2 ? args[2] : Path.ChangeExtension(inputPath, ".csv");
-                ExportCharsSimple(inputPath, outputPath);
-                Console.WriteLine("Exported simple format: " + outputPath);
-                return 0;
-            }
-            else if (firstArg == "-ascii" || firstArg == "-ea")
-            {
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("Usage: XnaFontRebuilder --export-ascii <input.txt> [output.txt]");
-                    return 1;
-                }
-                string inputPath = args[1];
-                string outputPath = args.Length > 2 ? args[2] : Path.ChangeExtension(inputPath, ".txt");
-                ExportCharsAsciiOnly(inputPath, outputPath);
-                Console.WriteLine("Exported ASCII codes: " + outputPath);
-                return 0;
-            }
-            else if (firstArg == "--export-text" || firstArg == "-et")
-            {
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("Usage: XnaFontRebuilder --export-text <input.bin> [output.txt]");
-                    return 1;
-                }
-                string inputPath = args[1];
-                string outputPath = args.Length > 2 ? args[2] : Path.ChangeExtension(inputPath, ".txt");
-                ExportCharsToTxt(inputPath, outputPath);
-                Console.WriteLine("Exported characters to: " + outputPath);
-                return 0;
-            }
-            else if (firstArg == "--build-cfg" || firstArg == "-bc")
+            else if (firstArg == "--build-cfg-auto" || firstArg == "-bca")
             {
                 if (args.Length < 3)
                 {
-                    Console.WriteLine("Usage: XnaFontRebuilder --build-cfg <input.txt> <output.cfg> [--template <template.cfg>] [--fontsize <size>]");
+                    Console.WriteLine("Usage: XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> [--template <template.cfg>] [--fontsize <size>]");
                     return 1;
                 }
+
                 string inputPath = args[1];
                 string outputPath = args[2];
                 string templatePath = null;
-                int? fontSize = null;
+                int? fontSizeOverride = null;
 
                 for (int i = 3; i < args.Length; i++)
                 {
@@ -89,50 +51,30 @@ class Program
                     else if (args[i] == "--fontsize" && i + 1 < args.Length)
                     {
                         if (int.TryParse(args[++i], out int size))
-                            fontSize = size;
+                            fontSizeOverride = size;
                         else
-                            Console.WriteLine("Warning: Invalid fontsize, using default.");
+                            Console.WriteLine("Warning: Invalid fontsize, using lineHeight from file.");
                     }
                 }
 
-                BuildCfg(inputPath, outputPath, templatePath, fontSize ?? 62);
+                BuildCfgAuto(inputPath, outputPath, templatePath, fontSizeOverride);
                 Console.WriteLine("Generated config: " + outputPath);
-                return 0;
-            }
-            else if (firstArg == "--dump-all" || firstArg == "-da")
-            {
-                if (args.Length < 2)
-                {
-                    Console.WriteLine("Usage: XnaFontRebuilder --dump-all <input.bin> [output.csv]");
-                    return 1;
-                }
-                string inputPath = args[1];
-                string outputPath = args.Length > 2 ? args[2] : null;
-                DumpAllInfo(inputPath, outputPath);
                 return 0;
             }
             else
             {
-                // 基础转换模式：支持扩展参数
-                var conversionOptions = ParseBaseConversionArgs(args);
-                ConvertBmFontToXnaTxt(conversionOptions);
-                Console.WriteLine($"Generated: {conversionOptions.OutputPath}");
-                return 0;
+                PrintUsage();
+                return 1;
             }
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Conversion failed: {ex.Message}");
+            Console.Error.WriteLine($"Error: {ex.Message}");
             return 1;
         }
     }
 
-    #region 基础转换核心逻辑（增强版）
-
-    /// <summary>
-    /// 将 AngelCode BMFont 的 .fnt 文件转换为 XNA 游戏可用的二进制格式
-    /// </summary>
-    /// <param name="options">转换参数</param>
+    #region 基础转换核心逻辑
     static void ConvertBmFontToXnaTxt(BaseConversionOptions options)
     {
         var document = XDocument.Load(options.InputPath, LoadOptions.None);
@@ -159,7 +101,6 @@ class Program
             WriteGlyphRecord(writer, charElement, options.AsciiExtraSpacing, options.CharacterSpacingCompensation);
         }
 
-        // 写入尾部固定数据
         writer.Write(lineHeight);
         writer.Write(0);
         writer.Write((byte)1);
@@ -167,9 +108,6 @@ class Program
         writer.Write((byte)0);
     }
 
-    /// <summary>
-    /// 将一个字符记录写入二进制流
-    /// </summary>
     static void WriteGlyphRecord(BinaryWriter writer, XElement charElement, float asciiExtraSpacing, float characterSpacingCompensation)
     {
         int id = ParseInt(charElement.Attribute("id"), "char.id");
@@ -182,10 +120,7 @@ class Program
         int xAdvance = ParseInt(charElement.Attribute("xadvance"), "char.xadvance");
         byte page = ParseByte(charElement.Attribute("page"), "char.page");
 
-        // 应用字符间距补偿
         xAdvance = (int)(xAdvance + characterSpacingCompensation);
-
-        // 为 ASCII 字符增加额外间距（例如拉丁字母）
         if (id >= 33 && id <= 127)
         {
             xAdvance = (int)(xAdvance + (2f * asciiExtraSpacing));
@@ -196,27 +131,23 @@ class Program
         writer.Write(y);
         writer.Write(width);
         writer.Write(height);
-        writer.Write(0);
+        writer.Write(0);                         // unknown, always 0
         writer.Write(yOffset);
         writer.Write(xAdvance);
-        writer.Write(0);
+        writer.Write(0);                         // unknown, always 0
         writer.Write((ushort)id);
         writer.Write(xOffset);
-        writer.Write((float)width);
-        writer.Write(((float)(xAdvance - width)) - xOffset);
+        writer.Write((float)width);              // stored as float
+        writer.Write(((float)(xAdvance - width)) - xOffset); // kerning adjustment
         writer.Write(page);
     }
 
-    /// <summary>
-    /// 解析基础转换的命令行参数
-    /// </summary>
     static BaseConversionOptions ParseBaseConversionArgs(string[] args)
     {
         string inputPath = Path.GetFullPath(args[0]);
         if (!File.Exists(inputPath))
             throw new FileNotFoundException("Input FNT file not found.", inputPath);
 
-        // 默认输出路径
         string outputPath = Path.Combine(
             Path.GetDirectoryName(inputPath) ?? Environment.CurrentDirectory,
             Path.GetFileNameWithoutExtension(inputPath) + ".txt");
@@ -225,7 +156,6 @@ class Program
         float asciiExtraSpacing = 0f;
         float characterSpacingCompensation = 0f;
 
-        // 解析剩余参数（跳过第一个输入文件）
         var remaining = args.Skip(1).ToList();
         bool outputSet = false;
 
@@ -234,7 +164,6 @@ class Program
             string arg = remaining[i];
             if (arg.StartsWith("-", StringComparison.Ordinal))
             {
-                // 命名参数
                 switch (arg)
                 {
                     case "--output":
@@ -244,14 +173,12 @@ class Program
                         outputPath = Path.GetFullPath(remaining[++i]);
                         outputSet = true;
                         break;
-
                     case "--line-height":
                     case "--lineHeight":
                         if (i + 1 >= remaining.Count)
                             throw new ArgumentException("--line-height requires a value.");
                         lineHeightOverride = int.Parse(remaining[++i], CultureInfo.InvariantCulture);
                         break;
-
                     case "--latin-compensation":
                     case "--latinCompensation":
                     case "--ascii-extra-spacing":
@@ -259,7 +186,6 @@ class Program
                             throw new ArgumentException("--latin-compensation requires a value.");
                         asciiExtraSpacing = float.Parse(remaining[++i], CultureInfo.InvariantCulture);
                         break;
-
                     case "--character-spacing-compensation":
                     case "--characterSpacingCompensation":
                     case "--char-spacing":
@@ -267,14 +193,12 @@ class Program
                             throw new ArgumentException("--character-spacing-compensation requires a value.");
                         characterSpacingCompensation = float.Parse(remaining[++i], CultureInfo.InvariantCulture);
                         break;
-
                     default:
                         throw new ArgumentException($"Unknown argument: {arg}");
                 }
             }
             else
             {
-                // 位置参数
                 if (!outputSet)
                 {
                     outputPath = Path.GetFullPath(arg);
@@ -301,98 +225,14 @@ class Program
 
         return new BaseConversionOptions(inputPath, outputPath, lineHeightOverride, asciiExtraSpacing, characterSpacingCompensation);
     }
-
     #endregion
 
-    #region 原有命令功能（保持不变）
-
-    static void DumpAllInfo(string inputPath, string outputPath)
-    {
-        using var input = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var reader = new BinaryReader(input);
-        var output = outputPath != null
-            ? new StreamWriter(outputPath, false, Encoding.UTF8)
-            : null;
-
-        try
-        {
-            var writer = output ?? Console.Out;
-
-            byte pageCount = reader.ReadByte();
-            int charCount = reader.ReadInt32();
-
-            writer.WriteLine("=== XNA Font File Dump ===");
-            writer.WriteLine($"Page Count: {pageCount}");
-            writer.WriteLine($"Character Count: {charCount}");
-            writer.WriteLine();
-
-            if (output != null)
-                writer.WriteLine("Id,IdHex,X,Y,Width,Height,YOffset,XAdvance,XOffset,Page");
-
-            for (int i = 0; i < charCount; i++)
-            {
-                var glyph = ReadGlyphRecord(reader);
-                if (output != null)
-                {
-                    writer.WriteLine($"{glyph.Id},{glyph.Id:X4},{glyph.X},{glyph.Y},{glyph.Width},{glyph.Height},{glyph.YOffset},{glyph.XAdvance},{glyph.XOffset},{glyph.Page}");
-                }
-                else
-                {
-                    writer.WriteLine($"Glyph {i + 1}:");
-                    writer.WriteLine($"  ID: {glyph.Id} (0x{glyph.Id:X4})");
-                    writer.WriteLine($"  Position: ({glyph.X}, {glyph.Y})");
-                    writer.WriteLine($"  Size: {glyph.Width} x {glyph.Height}");
-                    writer.WriteLine($"  Y Offset: {glyph.YOffset}");
-                    writer.WriteLine($"  X Advance: {glyph.XAdvance}");
-                    writer.WriteLine($"  X Offset: {glyph.XOffset}");
-                    writer.WriteLine($"  Page: {glyph.Page}");
-                    writer.WriteLine();
-                }
-            }
-
-            if (reader.BaseStream.Position < reader.BaseStream.Length)
-            {
-                int lineHeight = reader.ReadInt32();
-                int unknownInt = reader.ReadInt32();
-                byte b1 = reader.ReadByte();
-                byte b2 = reader.ReadByte();
-                byte b3 = reader.ReadByte();
-
-                writer.WriteLine("=== Trailer Data ===");
-                writer.WriteLine($"Line Height: {lineHeight}");
-                writer.WriteLine($"Unknown Int: {unknownInt}");
-                writer.WriteLine($"Unknown Bytes: {b1}, {b2}, {b3}");
-            }
-            else
-            {
-                writer.WriteLine("=== No trailer data found (file might be incomplete) ===");
-            }
-        }
-        finally
-        {
-            output?.Dispose();
-        }
-    }
-
-    static void ExportCharsToTxt(string inputPath, string outputPath)
-    {
-        using var input = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var reader = new BinaryReader(input);
-        using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
-
-        reader.ReadByte(); // pageCount
-        int charCount = reader.ReadInt32();
-
-        for (int i = 0; i < charCount; i++)
-        {
-            var glyph = ReadGlyphRecord(reader);
-            writer.Write((char)glyph.Id);
-        }
-    }
-
-    static void BuildCfg(string inputPath, string outputPath, string templatePath, int fontSize)
+    #region 自动配置生成
+    static void BuildCfgAuto(string inputPath, string outputPath, string templatePath, int? fontSizeOverride)
     {
         List<ushort> ids = new List<ushort>();
+        int lineHeight = 0;
+
         using (var input = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read))
         using (var reader = new BinaryReader(input))
         {
@@ -403,8 +243,58 @@ class Program
                 var glyph = ReadGlyphRecord(reader);
                 ids.Add(glyph.Id);
             }
+
+            // 读取尾部 lineHeight（位于所有字符记录之后）
+            if (reader.BaseStream.Position < reader.BaseStream.Length)
+            {
+                lineHeight = reader.ReadInt32();
+            }
+            else
+            {
+                lineHeight = 62; // fallback
+                Console.WriteLine("Warning: No lineHeight found in file, using default 62.");
+            }
         }
 
+        int fontSize = fontSizeOverride.HasValue ? fontSizeOverride.Value : lineHeight;
+        GenerateCfg(ids, fontSize, outputPath, templatePath);
+    }
+
+    /// <summary>
+    /// 读取一个字符记录（与 WriteGlyphRecord 格式完全一致）
+    /// </summary>
+    static GlyphRecord ReadGlyphRecord(BinaryReader reader)
+    {
+        int x = reader.ReadInt32();
+        int y = reader.ReadInt32();
+        int width = reader.ReadInt32();
+        int height = reader.ReadInt32();
+        int unknown1 = reader.ReadInt32(); // skip (always 0)
+        int yOffset = reader.ReadInt32();
+        int xAdvance = reader.ReadInt32();
+        int unknown2 = reader.ReadInt32(); // skip (always 0)
+        ushort id = reader.ReadUInt16();
+        float xOffset = reader.ReadSingle();
+        float floatWidth = reader.ReadSingle(); // skip
+        float something = reader.ReadSingle();  // skip
+        byte page = reader.ReadByte();
+
+        return new GlyphRecord
+        {
+            X = x,
+            Y = y,
+            Width = width,
+            Height = height,
+            YOffset = yOffset,
+            XAdvance = xAdvance,
+            Id = id,
+            XOffset = xOffset,
+            Page = page
+        };
+    }
+
+    static void GenerateCfg(List<ushort> ids, int fontSize, string outputPath, string templatePath)
+    {
         ids.Sort();
         var ranges = new List<string>();
         int start = ids[0];
@@ -535,204 +425,9 @@ class Program
             }
         }
     }
-
-    static void ExportChars(string inputPath, string outputPath)
-    {
-        using var input = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var reader = new BinaryReader(input);
-        using var output = new StreamWriter(outputPath, false, Encoding.UTF8);
-
-        output.WriteLine("ASCII Code,Character,Description");
-
-        reader.ReadByte(); // pageCount
-        int charCount = reader.ReadInt32();
-
-        for (int i = 0; i < charCount; i++)
-        {
-            var glyph = ReadGlyphRecord(reader);
-
-            string charStr;
-            string description;
-
-            if (glyph.Id >= 32 && glyph.Id <= 126)
-            {
-                charStr = ((char)glyph.Id).ToString();
-                description = GetAsciiDescription(glyph.Id);
-            }
-            else
-            {
-                charStr = "[0x" + glyph.Id.ToString("X4") + "]";
-                description = "Non-printable or extended ASCII";
-            }
-
-            output.WriteLine($"{glyph.Id},{charStr},{description}");
-        }
-    }
-
-    static void ExportCharsSimple(string inputPath, string outputPath)
-    {
-        using var input = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var reader = new BinaryReader(input);
-        using var output = new StreamWriter(outputPath, false, Encoding.UTF8);
-
-        output.WriteLine("ASCII Code,Character");
-
-        reader.ReadByte(); // pageCount
-        int charCount = reader.ReadInt32();
-
-        for (int i = 0; i < charCount; i++)
-        {
-            var glyph = ReadGlyphRecord(reader);
-            string charStr = (glyph.Id >= 32 && glyph.Id <= 126)
-                ? ((char)glyph.Id).ToString()
-                : "[0x" + glyph.Id.ToString("X4") + "]";
-            output.WriteLine($"{glyph.Id},{charStr}");
-        }
-    }
-
-    static void ExportCharsAsciiOnly(string inputPath, string outputPath)
-    {
-        using var input = new FileStream(inputPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var reader = new BinaryReader(input);
-        using var output = new StreamWriter(outputPath, false, Encoding.UTF8);
-
-        reader.ReadByte(); // pageCount
-        int charCount = reader.ReadInt32();
-
-        var ids = new List<int>();
-        for (int i = 0; i < charCount; i++)
-        {
-            var glyph = ReadGlyphRecord(reader);
-            ids.Add(glyph.Id);
-        }
-
-        output.Write(string.Join(",", ids));
-    }
-
     #endregion
 
     #region 通用辅助方法
-
-    static GlyphRecord ReadGlyphRecord(BinaryReader reader)
-    {
-        return new GlyphRecord
-        {
-            X = reader.ReadInt32(),
-            Y = reader.ReadInt32(),
-            Width = reader.ReadInt32(),
-            Height = reader.ReadInt32(),
-            YOffset = reader.ReadInt32(),
-            XAdvance = reader.ReadInt32(),
-            Id = reader.ReadUInt16(),
-            XOffset = reader.ReadSingle(),
-            Page = reader.ReadByte()
-        };
-    }
-
-    static string GetAsciiDescription(int code)
-    {
-        // 省略完整映射，与原始代码相同
-        return code switch
-        {
-            32 => "Space",
-            33 => "Exclamation mark",
-            34 => "Double quote",
-            35 => "Number sign",
-            36 => "Dollar sign",
-            37 => "Percent sign",
-            38 => "Ampersand",
-            39 => "Single quote",
-            40 => "Left parenthesis",
-            41 => "Right parenthesis",
-            42 => "Asterisk",
-            43 => "Plus sign",
-            44 => "Comma",
-            45 => "Hyphen",
-            46 => "Period",
-            47 => "Slash",
-            48 => "Digit 0",
-            49 => "Digit 1",
-            50 => "Digit 2",
-            51 => "Digit 3",
-            52 => "Digit 4",
-            53 => "Digit 5",
-            54 => "Digit 6",
-            55 => "Digit 7",
-            56 => "Digit 8",
-            57 => "Digit 9",
-            58 => "Colon",
-            59 => "Semicolon",
-            60 => "Less than",
-            61 => "Equals sign",
-            62 => "Greater than",
-            63 => "Question mark",
-            64 => "At sign",
-            65 => "Uppercase A",
-            66 => "Uppercase B",
-            67 => "Uppercase C",
-            68 => "Uppercase D",
-            69 => "Uppercase E",
-            70 => "Uppercase F",
-            71 => "Uppercase G",
-            72 => "Uppercase H",
-            73 => "Uppercase I",
-            74 => "Uppercase J",
-            75 => "Uppercase K",
-            76 => "Uppercase L",
-            77 => "Uppercase M",
-            78 => "Uppercase N",
-            79 => "Uppercase O",
-            80 => "Uppercase P",
-            81 => "Uppercase Q",
-            82 => "Uppercase R",
-            83 => "Uppercase S",
-            84 => "Uppercase T",
-            85 => "Uppercase U",
-            86 => "Uppercase V",
-            87 => "Uppercase W",
-            88 => "Uppercase X",
-            89 => "Uppercase Y",
-            90 => "Uppercase Z",
-            91 => "Left square bracket",
-            92 => "Backslash",
-            93 => "Right square bracket",
-            94 => "Caret",
-            95 => "Underscore",
-            96 => "Grave accent",
-            97 => "Lowercase a",
-            98 => "Lowercase b",
-            99 => "Lowercase c",
-            100 => "Lowercase d",
-            101 => "Lowercase e",
-            102 => "Lowercase f",
-            103 => "Lowercase g",
-            104 => "Lowercase h",
-            105 => "Lowercase i",
-            106 => "Lowercase j",
-            107 => "Lowercase k",
-            108 => "Lowercase l",
-            109 => "Lowercase m",
-            110 => "Lowercase n",
-            111 => "Lowercase o",
-            112 => "Lowercase p",
-            113 => "Lowercase q",
-            114 => "Lowercase r",
-            115 => "Lowercase s",
-            116 => "Lowercase t",
-            117 => "Lowercase u",
-            118 => "Lowercase v",
-            119 => "Lowercase w",
-            120 => "Lowercase x",
-            121 => "Lowercase y",
-            122 => "Lowercase z",
-            123 => "Left curly brace",
-            124 => "Vertical bar",
-            125 => "Right curly brace",
-            126 => "Tilde",
-            _ => "Unknown"
-        };
-    }
-
     static int ParseInt(XAttribute? attribute, string name)
     {
         if (attribute is null) throw new InvalidOperationException($"Missing attribute: {name}");
@@ -754,22 +449,13 @@ class Program
     static void PrintUsage()
     {
         Console.WriteLine("Usage:");
-        Console.WriteLine("  XnaFontRebuilder <input.fnt> [output.txt] [lineHeightOverride] [asciiExtraSpacing] [characterSpacingCompensation]");
-        Console.WriteLine("  XnaFontRebuilder <input.fnt> [output.txt] --line-height <value> --latin-compensation <value> --character-spacing-compensation <value>");
-        Console.WriteLine("  XnaFontRebuilder -export <input.txt> [output.csv]");
-        Console.WriteLine("  XnaFontRebuilder -export-simple <input.txt> [output.csv]");
-        Console.WriteLine("  XnaFontRebuilder -export-ascii <input.txt> [output.txt]");
-        Console.WriteLine("  XnaFontRebuilder --export-text <input.bin> [output.txt]");
-        Console.WriteLine("  XnaFontRebuilder --build-cfg <input.txt> <output.cfg> [--template <template.cfg>] [--fontsize <size>]");
-        Console.WriteLine("  XnaFontRebuilder --dump-all <input.bin> [output.csv]");
+        Console.WriteLine("  XnaFontRebuilder --convert <input.fnt> [output.txt] [options]");
+        Console.WriteLine("    Options: --line-height <value>, --ascii-extra-spacing <value>, --character-spacing-compensation <value>");
+        Console.WriteLine("  XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> [--template <template.cfg>] [--fontsize <size>]");
     }
-
     #endregion
 }
 
-/// <summary>
-/// 基础转换模式的参数
-/// </summary>
 internal sealed record BaseConversionOptions(
     string InputPath,
     string OutputPath,
