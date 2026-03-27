@@ -34,13 +34,29 @@ jobs:
         cd UnpackTerrariaTextAsset
         dotnet build -c Release
     
+    - name: Create output directory
+      run: |
+        New-Item -ItemType Directory -Force -Path output
+    
     - name: Localize and replace fonts
       run: |
         cd UnpackTerrariaTextAsset\bin\Release\net8.0
         dotnet UnpackTerrariaTextAsset.dll -localize ..\..\..\Resources\data.unity3d ..\..\..\Localization ..\..\..\output\data_localized.unity3d -f ..\..\..\font_work
+    
+    - name: Check if file exists
+      run: |
+        Get-ChildItem -Recurse output
+        if (Test-Path output\data_localized.unity3d) {
+          Write-Host "File found!"
+          $size = (Get-Item output\data_localized.unity3d).Length
+          Write-Host "File size: $size bytes"
+        } else {
+          Write-Host "File NOT found!"
+        }
     
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: localized-data-unity3d
         path: output/data_localized.unity3d
+        if-no-files-found: error
