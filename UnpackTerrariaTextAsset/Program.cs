@@ -32,6 +32,11 @@ class Program
         {
             HandleReplaceFonts(arg);
         }
+
+        if (arguments.TryGetValue("-build", out arg))
+        {
+            HandleBuild(arg);
+        }
     }
 
     private static void HandleExport(string targetPath)
@@ -76,37 +81,16 @@ class Program
     private static void HandleLocalize(string args)
     {
         var parts = args.Split(' ');
-        string bundlePath;
-        string localizationFolder;
-        string outputPath;
-        string? fontWorkFolder = null;
+        if (parts.Length < 3)
+        {
+            Console.WriteLine("-localize 参数格式错误！");
+            Console.WriteLine("正确用法: -localize <data.unity3d路径> <本地化文件夹路径> <输出文件路径>");
+            return;
+        }
 
-        int fIndex = Array.IndexOf(parts, "-f");
-        if (fIndex != -1)
-        {
-            if (parts.Length < 5)
-            {
-                Console.WriteLine("-localize 带 -f 参数格式错误！");
-                Console.WriteLine("正确用法: -localize <data.unity3d路径> <本地化文件夹路径> <输出文件路径> -f <font_work文件夹路径>");
-                return;
-            }
-            bundlePath = parts[0];
-            localizationFolder = parts[1];
-            outputPath = parts[2];
-            fontWorkFolder = parts[fIndex + 1];
-        }
-        else
-        {
-            if (parts.Length < 3)
-            {
-                Console.WriteLine("-localize 参数格式错误！");
-                Console.WriteLine("正确用法: -localize <data.unity3d路径> <本地化文件夹路径> <输出文件路径> [-f <font_work文件夹路径>]");
-                return;
-            }
-            bundlePath = parts[0];
-            localizationFolder = parts[1];
-            outputPath = parts[2];
-        }
+        var bundlePath = parts[0];
+        var localizationFolder = parts[1];
+        var outputPath = parts[2];
 
         if (!File.Exists(bundlePath))
         {
@@ -120,29 +104,12 @@ class Program
             return;
         }
 
-        if (fontWorkFolder != null && !Directory.Exists(fontWorkFolder))
-        {
-            Console.WriteLine($"未找到 font_work 文件夹: {fontWorkFolder}");
-            return;
-        }
-
         ProcessAndSaveBundle(bundlePath, outputPath, unpack =>
         {
             unpack.BatchLocalizationReplace(localizationFolder);
-            if (fontWorkFolder != null)
-            {
-                unpack.BatchReplaceFonts(fontWorkFolder);
-            }
         });
 
-        if (fontWorkFolder != null)
-        {
-            Console.WriteLine($"本地化和字体替换完成！输出文件: {outputPath}");
-        }
-        else
-        {
-            Console.WriteLine($"本地化完成！输出文件: {outputPath}");
-        }
+        Console.WriteLine($"本地化完成！输出文件: {outputPath}");
     }
 
     private static void HandleDiff(string args)
@@ -202,6 +169,48 @@ class Program
         });
 
         Console.WriteLine($"字体替换完成！输出文件: {outputPath}");
+    }
+
+    private static void HandleBuild(string args)
+    {
+        var parts = args.Split(' ');
+        if (parts.Length < 4)
+        {
+            Console.WriteLine("-build 参数格式错误！");
+            Console.WriteLine("正确用法: -build <data.unity3d路径> <本地化文件夹路径> <font_work文件夹路径> <输出文件路径>");
+            return;
+        }
+
+        var bundlePath = parts[0];
+        var localizationFolder = parts[1];
+        var fontWorkFolder = parts[2];
+        var outputPath = parts[3];
+
+        if (!File.Exists(bundlePath))
+        {
+            Console.WriteLine($"未找到文件: {bundlePath}");
+            return;
+        }
+
+        if (!Directory.Exists(localizationFolder))
+        {
+            Console.WriteLine($"未找到本地化文件夹: {localizationFolder}");
+            return;
+        }
+
+        if (!Directory.Exists(fontWorkFolder))
+        {
+            Console.WriteLine($"未找到 font_work 文件夹: {fontWorkFolder}");
+            return;
+        }
+
+        ProcessAndSaveBundle(bundlePath, outputPath, unpack =>
+        {
+            unpack.BatchLocalizationReplace(localizationFolder);
+            unpack.BatchReplaceFonts(fontWorkFolder);
+        });
+
+        Console.WriteLine($"本地化和字体替换完成！输出文件: {outputPath}");
     }
 
     private static void ProcessAndSaveBundle(string bundlePath, string outputPath, Action<UnpackBundle> processAction)

@@ -84,7 +84,7 @@ jobs:
         cd $exeDir
         Write-Host "Working directory: $(Get-Location)"
         Write-Host "Running command..."
-        dotnet UnpackTerrariaTextAsset.dll -localize "${{ steps.paths.outputs.BUNDLE_PATH }}" "${{ steps.paths.outputs.LOCALIZATION_PATH }}" "${{ steps.paths.outputs.OUTPUT_PATH }}" -f "${{ steps.paths.outputs.FONT_WORK_PATH }}"
+        dotnet UnpackTerrariaTextAsset.dll -build "${{ steps.paths.outputs.BUNDLE_PATH }}" "${{ steps.paths.outputs.LOCALIZATION_PATH }}" "${{ steps.paths.outputs.FONT_WORK_PATH }}" "${{ steps.paths.outputs.OUTPUT_PATH }}"
         Write-Host "Command completed"
     
     - name: Debug - Check output
