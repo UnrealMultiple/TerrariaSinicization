@@ -107,7 +107,7 @@ jobs:
         Get-ChildItem -Recurse -Filter "*.unity3d" -ErrorAction SilentlyContinue
     
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: localized-data-unity3d
         path: ${{ steps.paths.outputs.OUTPUT_PATH }}
