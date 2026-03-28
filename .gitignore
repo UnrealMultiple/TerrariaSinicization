@@ -366,3 +366,8 @@ FodyWeavers.xsd
 # XnaFontRebuilder 编译输出
 font_work/XnaFontRebuilder/bin/
 font_work/XnaFontRebuilder/obj/
+font_work/Item_Stack/
+font_work/Combat_Crit/
+font_work/Combat_Text/
+font_work/Death_Text/
+font_work/Mouse_Text/
