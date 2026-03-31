@@ -1,59 +1,42 @@
-# FontBuilder.ps1
-# 统一的字体生成脚本 - 支持批量生成和单独生成
+# FontXnaBuilder.ps1
+# 从 FontInfo 字符信息生成字体 - 支持批量生成和单独生成
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir
 
+# 读取配置文件
+$ConfigFile = Join-Path $ScriptDir "config.json"
+if (-not (Test-Path $ConfigFile)) {
+    Write-Host "✗ 配置文件不存在: $ConfigFile" -ForegroundColor Red
+    exit 1
+}
+
+$Config = Get-Content $ConfigFile | ConvertFrom-Json
+
 # 字体配置列表
-$fontConfigs = @{
-    "Item_Stack" = @{
-        ConfigFile = ".\Item_Stack.bmfc"
-        OutputDir = ".\Item_Stack"
-        FontFile = "Item_Stack.fnt"
-        TxtFile = "Item_Stack.txt"
-        Description = "物品堆叠数字字体"
-        CharInfoFile = ".\FontInfo\Item_Stack.txt"
-    }
-    "Combat_Crit" = @{
-        ConfigFile = ".\Combat_Crit.bmfc"
-        OutputDir = ".\Combat_Crit"
-        FontFile = "Combat_Crit.fnt"
-        TxtFile = "Combat_Crit.txt"
-        Description = "战斗暴击数字字体"
-        CharInfoFile = ".\FontInfo\Combat_Crit.txt"
-    }
-    "Combat_Text" = @{
-        ConfigFile = ".\Combat_Text.bmfc"
-        OutputDir = ".\Combat_Text"
-        FontFile = "Combat_Text.fnt"
-        TxtFile = "Combat_Text.txt"
-        Description = "战斗文字字体"
-        CharInfoFile = ".\FontInfo\Combat_Text.txt"
-    }
-    "Death_Text" = @{
-        ConfigFile = ".\Death_Text.bmfc"
-        OutputDir = ".\Death_Text"
-        FontFile = "Death_Text.fnt"
-        TxtFile = "Death_Text.txt"
-        Description = "死亡文字字体"
-        CharInfoFile = ".\FontInfo\Death_Text.txt"
-    }
-    "Mouse_Text" = @{
-        ConfigFile = ".\Mouse_Text.bmfc"
-        OutputDir = ".\Mouse_Text"
-        FontFile = "Mouse_Text.fnt"
-        TxtFile = "Mouse_Text.txt"
-        Description = "鼠标提示文字字体"
-        CharInfoFile = ".\FontInfo\Mouse_Text.txt"
+$fontConfigs = @{}
+foreach ($fontName in $Config.fonts.PSObject.Properties.Name) {
+    $fontData = $Config.fonts.$fontName
+    $fontConfigs[$fontName] = @{
+        ConfigFile = $fontData.configFile
+        OutputDir = $fontData.outputDir
+        FontFile = $fontData.fontFile
+        TxtFile = $fontData.txtFile
+        Description = $fontData.description
+        CharInfoFile = $fontData.charInfoFile
     }
 }
 
 # 全局配置
-$BMFontExe = ".\bmfont64.com"
-$XnaFontRebuilder = ".\XnaFontRebuilder\bin\Release\net8.0\XnaFontRebuilder.dll"
-$SourceFont = ".\font.otf"
-$FontInfoDir = ".\FontInfo"
+$BMFontExe = $Config.global.bmfontExe
+$XnaFontRebuilder = $Config.global.xnaFontRebuilder
+$SourceFont = $Config.global.sourceFont
+$FontInfoDir = $Config.global.fontInfoDir
+
+# 转换参数
+$LatinCompensation = $Config.conversion.latinCompensation
+$CharSpacing = $Config.conversion.charSpacing
 
 # 公共函数：检查环境
 function Test-Environment {
@@ -130,44 +113,40 @@ function Build-XnaFontRebuilder {
 function Generate-ConfigFile {
     param(
         [string]$FontName,
-        [hashtable]$Config
+        [hashtable]$FontConfig
     )
     
     Write-Host "  [0/3] 生成配置文件..." -ForegroundColor Yellow
     
     # 检查字符信息文件是否存在
-    if (-not (Test-Path $Config.CharInfoFile)) {
-        Write-Host "    ✗ 字符信息文件不存在: $($Config.CharInfoFile)" -ForegroundColor Red
+    if (-not (Test-Path $FontConfig.CharInfoFile)) {
+        Write-Host "    ✗ 字符信息文件不存在: $($FontConfig.CharInfoFile)" -ForegroundColor Red
         return $false
     }
     
-    # 检查是否存在对应的 txt 字体文件（用于读取字体大小）
-    $existingTxtFile = Join-Path $Config.OutputDir $Config.TxtFile
-    $fromFontParam = if (Test-Path $existingTxtFile) { "--from-font `"$existingTxtFile`"" } else { "" }
-    
     try {
-        # 使用 --build-from-chars 命令生成配置文件
-        # 从字符信息文件生成，自动检测字体大小（如果存在现有字体文件）
-        $cmd = "dotnet `"$XnaFontRebuilder`" --build-cfg-auto `"$($Config.CharInfoFile)`" `"$($Config.ConfigFile)`""
-        
-        if ($fromFontParam) {
-            $cmd += " $fromFontParam"
-            Write-Host "    使用现有字体文件检测大小: $existingTxtFile" -ForegroundColor Gray
-        } else {
-            Write-Host "    使用默认字体大小: 62" -ForegroundColor Gray
-        }
-        
+        # 使用 --build-cfg-auto 命令生成配置文件
+        # 从 XNA 二进制字体文件提取字符信息并生成 BMFont 配置
+        $cmdArgs = @(
+            "`"$XnaFontRebuilder`""
+            "--build-cfg-auto"
+            "`"$($FontConfig.CharInfoFile)`""
+            "`"$($FontConfig.ConfigFile)`""
+            "`"$SourceFont`""
+        )
+
+        $cmd = "dotnet " + ($cmdArgs -join " ")
         Invoke-Expression $cmd
         
         if ($LASTEXITCODE -ne 0) {
             throw "配置文件生成失败，退出代码: $LASTEXITCODE"
         }
         
-        if (-not (Test-Path $Config.ConfigFile)) {
+        if (-not (Test-Path $FontConfig.ConfigFile)) {
             throw "未找到生成的配置文件"
         }
         
-        Write-Host "    ✓ 配置文件生成成功: $($Config.ConfigFile)" -ForegroundColor Green
+        Write-Host "    ✓ 配置文件生成成功: $($FontConfig.ConfigFile)" -ForegroundColor Green
         return $true
     }
     catch {
@@ -180,34 +159,34 @@ function Generate-ConfigFile {
 function Generate-Font {
     param(
         [string]$FontName,
-        [hashtable]$Config
+        [hashtable]$FontConfig
     )
     
     Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta
     Write-Host "  生成字体: $FontName" -ForegroundColor Cyan
-    Write-Host "  描述: $($Config.Description)" -ForegroundColor Gray
+    Write-Host "  描述: $($FontConfig.Description)" -ForegroundColor Gray
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta
     
     $startTime = Get-Date
     
     # 步骤0: 生成配置文件
-    if (-not (Generate-ConfigFile -FontName $FontName -Config $Config)) {
+    if (-not (Generate-ConfigFile -FontName $FontName -FontConfig $FontConfig)) {
         return $false
     }
     
     # 确保输出目录存在
-    if (-not (Test-Path $Config.OutputDir)) {
-        New-Item -ItemType Directory -Path $Config.OutputDir -Force | Out-Null
-        Write-Host "  ✓ 创建输出目录: $($Config.OutputDir)" -ForegroundColor Gray
+    if (-not (Test-Path $FontConfig.OutputDir)) {
+        New-Item -ItemType Directory -Path $FontConfig.OutputDir -Force | Out-Null
+        Write-Host "  ✓ 创建输出目录: $($FontConfig.OutputDir)" -ForegroundColor Gray
     }
     
-    $fontPath = Join-Path $Config.OutputDir $Config.FontFile
-    $txtPath = Join-Path $Config.OutputDir $Config.TxtFile
+    $fontPath = Join-Path $FontConfig.OutputDir $FontConfig.FontFile
+    $txtPath = Join-Path $FontConfig.OutputDir $FontConfig.TxtFile
     
     # 步骤1: 生成 BMFont
     Write-Host "  [1/3] 生成 BMFont 文件..." -ForegroundColor Yellow
     try {
-        $configAbs = Resolve-Path $Config.ConfigFile
+        $configAbs = Resolve-Path $FontConfig.ConfigFile
         $fontAbs = Join-Path $PWD $fontPath
         
         $process = Start-Process -FilePath $BMFontExe `
@@ -223,7 +202,7 @@ function Generate-Font {
         }
         
         # 统计生成的图片
-        $pngFiles = Get-ChildItem -Path $Config.OutputDir -Filter "$($FontName)_*.png" -ErrorAction SilentlyContinue
+        $pngFiles = Get-ChildItem -Path $FontConfig.OutputDir -Filter "$($FontName)_*.png" -ErrorAction SilentlyContinue
         Write-Host "    ✓ 生成成功，纹理图片: $($pngFiles.Count) 张" -ForegroundColor Green
     }
     catch {
@@ -235,7 +214,7 @@ function Generate-Font {
     Write-Host "  [2/3] 转换为 TXT 格式..." -ForegroundColor Yellow
     try {
         # 使用新的命令格式：--convert <input.fnt> <output.txt> [options]
-        dotnet $XnaFontRebuilder --convert $fontPath $txtPath --latin-compensation 0.5 --char-spacing 1
+        dotnet $XnaFontRebuilder --convert $fontPath $txtPath --latin-compensation $LatinCompensation --char-spacing $CharSpacing
         
         if ($LASTEXITCODE -ne 0) {
             throw "格式转换失败，退出代码: $LASTEXITCODE"
@@ -257,16 +236,16 @@ function Generate-Font {
     
     $fntSize = (Get-Item $fontPath).Length
     $txtSize = (Get-Item $txtPath).Length
-    $pngCount = (Get-ChildItem -Path $Config.OutputDir -Filter "*.png").Count
+    $pngCount = (Get-ChildItem -Path $FontConfig.OutputDir -Filter "*.png").Count
     
     Write-Host "    ✓ .fnt: $([math]::Round($fntSize/1KB, 2)) KB" -ForegroundColor Green
     Write-Host "    ✓ .txt: $([math]::Round($txtSize/1KB, 2)) KB" -ForegroundColor Green
     Write-Host "    ✓ 纹理: $pngCount 张图片" -ForegroundColor Green
     
     # 删除临时配置文件
-    if (Test-Path $Config.ConfigFile) {
-        Remove-Item $Config.ConfigFile -Force
-        Write-Host "    ✓ 删除临时配置文件: $($Config.ConfigFile)"  -ForegroundColor Green
+    if (Test-Path $FontConfig.ConfigFile) {
+        Remove-Item $FontConfig.ConfigFile -Force
+        Write-Host "    ✓ 删除临时配置文件: $($FontConfig.ConfigFile)"  -ForegroundColor Green
     }
     
     $endTime = Get-Date
@@ -283,10 +262,10 @@ function Show-AvailableFonts {
     Write-Host ("{0,-15} {1,-30} {2,-20} {3}" -f "----", "----", "--------", "--------") -ForegroundColor Gray
     
     foreach ($name in $fontConfigs.Keys | Sort-Object) {
-        $config = $fontConfigs[$name]
-        $charExists = if (Test-Path $config.CharInfoFile) { "✓" } else { "✗" }
-        $cfgExists = if (Test-Path $config.ConfigFile) { "✓" } else { "✗" }
-        Write-Host ("{0,-15} {1,-30} {2,-20} {3}" -f $name, $config.Description, $charExists, $cfgExists)
+        $fontCfg = $fontConfigs[$name]
+        $charExists = if (Test-Path $fontCfg.CharInfoFile) { "✓" } else { "✗" }
+        $cfgExists = if (Test-Path $fontCfg.ConfigFile) { "✓" } else { "✗" }
+        Write-Host ("{0,-15} {1,-30} {2,-20} {3}" -f $name, $fontCfg.Description, $charExists, $cfgExists)
     }
 }
 
@@ -300,7 +279,7 @@ function Show-Help {
 ║       自动生成配置文件 -> 调用 BMFont -> 转换为 XNA 格式     ║
 ╠══════════════════════════════════════════════════════════════╣
 ║ 用法:                                                        ║
-║   .\FontBuilder.ps1 [参数]                                   ║
+║   .\FontXnaBuilder.ps1 [参数]                                ║
 ╠══════════════════════════════════════════════════════════════╣
 ║ 参数:                                                        ║
 ║   无参数           - 生成所有字体                            ║
@@ -310,10 +289,10 @@ function Show-Help {
 ║   -Rebuild        - 强制重新构建 XnaFontRebuilder            ║
 ╠══════════════════════════════════════════════════════════════╣
 ║ 示例:                                                        ║
-║   .\FontBuilder.ps1                    # 生成所有字体        ║
-║   .\FontBuilder.ps1 -List              # 列出所有字体        ║
-║   .\FontBuilder.ps1 -Font Item_Stack   # 生成单个字体        ║
-║   .\FontBuilder.ps1 -Rebuild           # 重新构建并生成所有  ║
+║   .\FontXnaBuilder.ps1                    # 生成所有字体     ║
+║   .\FontXnaBuilder.ps1 -List              # 列出所有字体     ║
+║   .\FontXnaBuilder.ps1 -Font Item_Stack   # 生成单个字体     ║
+║   .\FontXnaBuilder.ps1 -Rebuild           # 重新构建并生成   ║
 ╚══════════════════════════════════════════════════════════════╝
 "@
 }
@@ -389,7 +368,7 @@ function Main {
     $totalStart = Get-Date
     
     foreach ($name in $fontsToGenerate.Keys | Sort-Object) {
-        $result = Generate-Font -FontName $name -Config $fontsToGenerate[$name]
+        $result = Generate-Font -FontName $name -FontConfig $fontsToGenerate[$name]
         if ($result) {
             $successList += $name
         } else {

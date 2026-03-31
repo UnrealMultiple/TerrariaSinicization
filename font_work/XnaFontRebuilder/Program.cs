@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+using SixLabors.Fonts;
+using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 
@@ -31,33 +32,17 @@ class Program
             }
             else if (firstArg == "--build-cfg-auto" || firstArg == "-bca")
             {
-                if (args.Length < 3)
+                if (args.Length < 4)
                 {
-                    Console.WriteLine("Usage: XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> [--template <template.cfg>] [--fontsize <size>]");
+                    Console.WriteLine("Usage: XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> <fontPath>");
                     return 1;
                 }
 
                 string inputPath = args[1];
                 string outputPath = args[2];
-                string templatePath = null;
-                int? fontSizeOverride = null;
+                string fontPath = args[3];
 
-                for (int i = 3; i < args.Length; i++)
-                {
-                    if (args[i] == "--template" && i + 1 < args.Length)
-                    {
-                        templatePath = args[++i];
-                    }
-                    else if (args[i] == "--fontsize" && i + 1 < args.Length)
-                    {
-                        if (int.TryParse(args[++i], out int size))
-                            fontSizeOverride = size;
-                        else
-                            Console.WriteLine("Warning: Invalid fontsize, using lineHeight from file.");
-                    }
-                }
-
-                BuildCfgAuto(inputPath, outputPath, templatePath, fontSizeOverride);
+                BuildCfgAuto(inputPath, outputPath, fontPath);
                 Console.WriteLine("Generated config: " + outputPath);
                 return 0;
             }
@@ -72,6 +57,12 @@ class Program
             Console.Error.WriteLine($"Error: {ex.Message}");
             return 1;
         }
+    }
+
+    static string GetFontName(string path)
+    {
+        var description = FontDescription.LoadDescription(path);
+       return description.GetNameById(new CultureInfo("zh-CN"), SixLabors.Fonts.WellKnownIds.KnownNameIds.FontFamilyName);
     }
 
     #region 基础转换核心逻辑
@@ -228,7 +219,7 @@ class Program
     #endregion
 
     #region 自动配置生成
-    static void BuildCfgAuto(string inputPath, string outputPath, string templatePath, int? fontSizeOverride)
+    static void BuildCfgAuto(string inputPath, string outputPath, string fontPath)
     {
         List<ushort> ids = new List<ushort>();
         int lineHeight = 0;
@@ -256,8 +247,7 @@ class Program
             }
         }
 
-        int fontSize = fontSizeOverride.HasValue ? fontSizeOverride.Value : lineHeight;
-        GenerateCfg(ids, fontSize, outputPath, templatePath);
+        GenerateCfg(ids, lineHeight, outputPath, fontPath);
     }
 
     /// <summary>
@@ -293,7 +283,7 @@ class Program
         };
     }
 
-    static void GenerateCfg(List<ushort> ids, int fontSize, string outputPath, string templatePath)
+    static void GenerateCfg(List<ushort> ids, int fontSize, string outputPath, string fontPath)
     {
         ids.Sort();
         var ranges = new List<string>();
@@ -320,109 +310,67 @@ class Program
             var group = ranges.Skip(i).Take(rangesPerLine);
             charLines.Add(string.Join(",", group));
         }
-
-        if (templatePath != null)
+        var fontName = GetFontName(fontPath);
+        using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
+        writer.WriteLine("# AngelCode Bitmap Font Generator configuration file");
+        writer.WriteLine("fileVersion=1");
+        writer.WriteLine();
+        writer.WriteLine("# font settings");
+        writer.WriteLine($"fontName={fontName}");
+        writer.WriteLine($"fontFile={Path.GetFileName(fontPath)}");
+        writer.WriteLine("charSet=0");
+        writer.WriteLine($"fontSize={fontSize}");
+        writer.WriteLine("aa=4");
+        writer.WriteLine("scaleH=100");
+        writer.WriteLine("useSmoothing=1");
+        writer.WriteLine("isBold=0");
+        writer.WriteLine("isItalic=0");
+        writer.WriteLine("useUnicode=1");
+        writer.WriteLine("disableBoxChars=1");
+        writer.WriteLine("outputInvalidCharGlyph=0");
+        writer.WriteLine("dontIncludeKerningPairs=0");
+        writer.WriteLine("useHinting=1");
+        writer.WriteLine("renderFromOutline=0");
+        writer.WriteLine("useClearType=1");
+        writer.WriteLine("autoFitNumPages=0");
+        writer.WriteLine("autoFitFontSizeMin=0");
+        writer.WriteLine("autoFitFontSizeMax=0");
+        writer.WriteLine();
+        writer.WriteLine("# character alignment");
+        writer.WriteLine("paddingDown=0");
+        writer.WriteLine("paddingUp=0");
+        writer.WriteLine("paddingRight=0");
+        writer.WriteLine("paddingLeft=0");
+        writer.WriteLine("spacingHoriz=1");
+        writer.WriteLine("spacingVert=1");
+        writer.WriteLine("useFixedHeight=0");
+        writer.WriteLine("forceZero=0");
+        writer.WriteLine("widthPaddingFactor=0.00");
+        writer.WriteLine();
+        writer.WriteLine("# output file");
+        writer.WriteLine("outWidth=1024");
+        writer.WriteLine("outHeight=1024");
+        writer.WriteLine("outBitDepth=32");
+        writer.WriteLine("fontDescFormat=1");
+        writer.WriteLine("fourChnlPacked=0");
+        writer.WriteLine("textureFormat=png");
+        writer.WriteLine("textureCompression=0");
+        writer.WriteLine("alphaChnl=0");
+        writer.WriteLine("redChnl=3");
+        writer.WriteLine("greenChnl=3");
+        writer.WriteLine("blueChnl=3");
+        writer.WriteLine("invA=0");
+        writer.WriteLine("invR=0");
+        writer.WriteLine("invG=0");
+        writer.WriteLine("invB=0");
+        writer.WriteLine();
+        writer.WriteLine("# outline");
+        writer.WriteLine("outlineThickness=0");
+        writer.WriteLine();
+        writer.WriteLine("# selected chars");
+        foreach (string line in charLines)
         {
-            string[] templateLines = File.ReadAllLines(templatePath);
-            var outputLines = new List<string>();
-            bool charsReplaced = false;
-            bool fontSizeReplaced = false;
-
-            foreach (string line in templateLines)
-            {
-                if (line.StartsWith("chars="))
-                {
-                    if (!charsReplaced)
-                    {
-                        outputLines.AddRange(charLines.Select(cl => "chars=" + cl));
-                        charsReplaced = true;
-                    }
-                    continue;
-                }
-                else if (line.StartsWith("fontSize="))
-                {
-                    outputLines.Add($"fontSize={fontSize}");
-                    fontSizeReplaced = true;
-                    continue;
-                }
-                else
-                {
-                    outputLines.Add(line);
-                }
-            }
-
-            if (!charsReplaced)
-                outputLines.AddRange(charLines.Select(cl => "chars=" + cl));
-            if (!fontSizeReplaced)
-                outputLines.Add($"fontSize={fontSize}");
-
-            File.WriteAllLines(outputPath, outputLines);
-        }
-        else
-        {
-            using (var writer = new StreamWriter(outputPath, false, Encoding.UTF8))
-            {
-                writer.WriteLine("# AngelCode Bitmap Font Generator configuration file");
-                writer.WriteLine("fileVersion=1");
-                writer.WriteLine();
-                writer.WriteLine("# font settings");
-                writer.WriteLine("fontName=思源黑体 CN");
-                writer.WriteLine("fontFile=font.otf");
-                writer.WriteLine("charSet=0");
-                writer.WriteLine($"fontSize={fontSize}");
-                writer.WriteLine("aa=4");
-                writer.WriteLine("scaleH=100");
-                writer.WriteLine("useSmoothing=1");
-                writer.WriteLine("isBold=0");
-                writer.WriteLine("isItalic=0");
-                writer.WriteLine("useUnicode=1");
-                writer.WriteLine("disableBoxChars=1");
-                writer.WriteLine("outputInvalidCharGlyph=0");
-                writer.WriteLine("dontIncludeKerningPairs=0");
-                writer.WriteLine("useHinting=1");
-                writer.WriteLine("renderFromOutline=0");
-                writer.WriteLine("useClearType=1");
-                writer.WriteLine("autoFitNumPages=0");
-                writer.WriteLine("autoFitFontSizeMin=0");
-                writer.WriteLine("autoFitFontSizeMax=0");
-                writer.WriteLine();
-                writer.WriteLine("# character alignment");
-                writer.WriteLine("paddingDown=0");
-                writer.WriteLine("paddingUp=0");
-                writer.WriteLine("paddingRight=0");
-                writer.WriteLine("paddingLeft=0");
-                writer.WriteLine("spacingHoriz=1");
-                writer.WriteLine("spacingVert=1");
-                writer.WriteLine("useFixedHeight=0");
-                writer.WriteLine("forceZero=0");
-                writer.WriteLine("widthPaddingFactor=0.00");
-                writer.WriteLine();
-                writer.WriteLine("# output file");
-                writer.WriteLine("outWidth=1024");
-                writer.WriteLine("outHeight=1024");
-                writer.WriteLine("outBitDepth=32");
-                writer.WriteLine("fontDescFormat=1");
-                writer.WriteLine("fourChnlPacked=0");
-                writer.WriteLine("textureFormat=png");
-                writer.WriteLine("textureCompression=0");
-                writer.WriteLine("alphaChnl=0");
-                writer.WriteLine("redChnl=3");
-                writer.WriteLine("greenChnl=3");
-                writer.WriteLine("blueChnl=3");
-                writer.WriteLine("invA=0");
-                writer.WriteLine("invR=0");
-                writer.WriteLine("invG=0");
-                writer.WriteLine("invB=0");
-                writer.WriteLine();
-                writer.WriteLine("# outline");
-                writer.WriteLine("outlineThickness=0");
-                writer.WriteLine();
-                writer.WriteLine("# selected chars");
-                foreach (string line in charLines)
-                {
-                    writer.WriteLine("chars=" + line);
-                }
-            }
+            writer.WriteLine("chars=" + line);
         }
     }
     #endregion
@@ -451,7 +399,7 @@ class Program
         Console.WriteLine("Usage:");
         Console.WriteLine("  XnaFontRebuilder --convert <input.fnt> [output.txt] [options]");
         Console.WriteLine("    Options: --line-height <value>, --ascii-extra-spacing <value>, --character-spacing-compensation <value>");
-        Console.WriteLine("  XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> [--template <template.cfg>] [--fontsize <size>]");
+        Console.WriteLine("  XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> <fontPath>");
     }
     #endregion
 }

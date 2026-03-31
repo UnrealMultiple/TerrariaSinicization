@@ -23,13 +23,13 @@ dotnet build -c Release
 将 BMFont 的 .fnt 文件转换为 Terraria 可用的二进制格式：
 
 ```bash
-dotnet XnaFontRebuilder.dll --convert <input.fnt> [output.txt] [选项]
+dotnet XnaFontRebuilder.dll --convert <input.fnt> [output.txt] [options]
 ```
 
 **常用选项：**
 - `--line-height <值>`: 覆盖行高
 - `--latin-compensation <值>`: 拉丁字母额外间距补偿
-- `--character-spacing-compensation <值>`: 全局字符间距补偿
+- `--char-spacing <值>`: 全局字符间距补偿
 
 **示例：**
 ```bash
@@ -40,57 +40,58 @@ dotnet XnaFontRebuilder.dll --convert Combat_Text.fnt Combat_Text.txt
 dotnet XnaFontRebuilder.dll --convert Combat_Text.fnt Combat_Text.txt --latin-compensation 0.5 --char-spacing 1
 ```
 
-### 2. 自动配置生成
+### 2. 自动配置生成（从 XNA 二进制字体文件）
 
-从现有的字体文件自动生成 BMFont 配置文件：
+从现有的 XNA 二进制字体文件（.txt）读取字符信息，生成 BMFont 配置文件：
 
 ```bash
-dotnet XnaFontRebuilder.dll --build-cfg-auto <input.bin> <output.cfg> [--template <template.cfg>] [--fontsize <size>]
+dotnet XnaFontRebuilder.dll --build-cfg-auto <input.bin> <output.bmfc> <fontPath>
 ```
 
-**选项：**
-- `--template <template.cfg>`: 使用模板配置文件
-- `--fontsize <size>`: 指定字体大小
+**参数：**
+- `input.bin`: 输入的 XNA 二进制字体文件路径（.txt 格式）
+- `output.bmfc`: 生成的 BMFont 配置文件路径
+- `fontPath`: 源字体文件路径（用于获取字体名称，如 font.otf）
+
+**工作原理：**
+1. 读取 XNA 二进制文件中的所有字符 ID
+2. 将字符 ID 排序并合并为连续范围（如 32-127, 161-511）
+3. 读取文件尾部的 lineHeight 作为字体大小
+4. 生成标准的 BMFont 配置文件（.bmfc）
 
 **示例：**
 ```bash
-# 从现有字体文件生成配置
-dotnet XnaFontRebuilder.dll --build-cfg-auto Combat_Text.txt Combat_Text.bmfc
-
-# 带模板文件
-dotnet XnaFontRebuilder.dll --build-cfg-auto Combat_Text.txt Combat_Text.bmfc --template .\Back\Combat_Text.bmfc
-
-# 指定字体大小
-dotnet XnaFontRebuilder.dll --build-cfg-auto Combat_Text.txt Combat_Text.bmfc --fontsize 62
+# 从现有 XNA 字体文件生成 BMFont 配置
+dotnet XnaFontRebuilder.dll --build-cfg-auto Death_Text.txt Death_Text.bmfc font.otf
 ```
-
-### 3. 从字符信息生成配置
-
-从包含字符信息的文本文件生成 BMFont 配置：
-
-```bash
-dotnet XnaFontRebuilder.dll --build-cfg-auto <char-info.txt> <output.cfg> [--from-font <existing-font.txt>]
-```
-
-**选项：**
-- `--from-font <existing-font.txt>`: 从现有字体文件中检测字体大小
 
 ## 项目结构
 
 ```
 XnaFontRebuilder/
 ├── XnaFontRebuilder.csproj    # 项目文件
-└── Program.cs                   # 主程序入口
+└── Program.cs                 # 主程序入口
 ```
 
 ## 使用场景
 
 1. **字体转换**：将 BMFont 生成的 .fnt 文件转换为 Terraria 游戏可用的二进制 .txt 格式
-2. **配置生成**：从现有字体文件或字符信息自动生成 BMFont 配置文件
-3. **批量处理**：通过 FontBuilder.ps1 脚本批量处理多个字体
+2. **配置生成**：从现有的 XNA 二进制字体文件提取字符集，生成 BMFont 配置文件
+3. **批量处理**：通过 FontBuilder.ps1 或 FontXnaBuilder.ps1 脚本批量处理多个字体
+
+## 在 font_work 中的使用
+
+XnaFontRebuilder 被以下脚本调用：
+
+- **FontBuilder.ps1**: 使用 `--convert` 命令将 .fnt 转换为 .txt
+- **FontXnaBuilder.ps1**: 使用 `--build-cfg-auto` 命令从 FontInfo/ 中的 XNA 字体文件生成 BMFont 配置
+
+配置参数（如补偿值）在 `config.json` 的 `conversion` 部分定义。
 
 ## 注意事项
 
 1. 确保输入的 .fnt 文件是 BMFont 生成的有效格式
 2. 转换时建议使用 `--latin-compensation` 来调整拉丁字母的间距
-3. 生成的 .txt 文件可以直接被 UnpackTerrariaTextAsset 的 `-replacefonts` 或 `-build` 命令使用
+3. 生成的 .txt 文件可以直接被 Terraria 游戏使用
+4. `--build-cfg-auto` 生成的配置文件默认保存在根目录
+5. `--build-cfg-auto` 的输入文件必须是 XNA 二进制格式（.txt），而不是字符信息文本文件
