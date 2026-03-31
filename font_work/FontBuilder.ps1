@@ -5,49 +5,36 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir
 
+# 读取配置文件
+$ConfigFile = Join-Path $ScriptDir "config.json"
+if (-not (Test-Path $ConfigFile)) {
+    Write-Host "✗ 配置文件不存在: $ConfigFile" -ForegroundColor Red
+    exit 1
+}
+
+$Config = Get-Content $ConfigFile | ConvertFrom-Json
+
 # 字体配置列表
-$fontConfigs = @{
-    "Item_Stack" = @{
-        ConfigFile = ".\Item_Stack.bmfc"
-        OutputDir = ".\Item_Stack"
-        FontFile = "Item_Stack.fnt"
-        TxtFile = "Item_Stack.txt"
-        Description = "物品堆叠数字字体"
-    }
-    "Combat_Crit" = @{
-        ConfigFile = ".\Combat_Crit.bmfc"
-        OutputDir = ".\Combat_Crit"
-        FontFile = "Combat_Crit.fnt"
-        TxtFile = "Combat_Crit.txt"
-        Description = "战斗暴击数字字体"
-    }
-    "Combat_Text" = @{
-        ConfigFile = ".\Combat_Text.bmfc"
-        OutputDir = ".\Combat_Text"
-        FontFile = "Combat_Text.fnt"
-        TxtFile = "Combat_Text.txt"
-        Description = "战斗文字字体"
-    }
-    "Death_Text" = @{
-        ConfigFile = ".\Death_Text.bmfc"
-        OutputDir = ".\Death_Text"
-        FontFile = "Death_Text.fnt"
-        TxtFile = "Death_Text.txt"
-        Description = "死亡文字字体"
-    }
-    "Mouse_Text" = @{
-        ConfigFile = ".\Mouse_Text.bmfc"
-        OutputDir = ".\Mouse_Text"
-        FontFile = "Mouse_Text.fnt"
-        TxtFile = "Mouse_Text.txt"
-        Description = "鼠标提示文字字体"
+$fontConfigs = @{}
+foreach ($fontName in $Config.fonts.PSObject.Properties.Name) {
+    $fontData = $Config.fonts.$fontName
+    $fontConfigs[$fontName] = @{
+        ConfigFile = $fontData.configFile
+        OutputDir = $fontData.outputDir
+        FontFile = $fontData.fontFile
+        TxtFile = $fontData.txtFile
+        Description = $fontData.description
     }
 }
 
 # 全局配置
-$BMFontExe = ".\bmfont64.com"
-$RebuilderDll = ".\XnaFontRebuilder\bin\Release\net8.0\XnaFontRebuilder.dll"
-$SourceFont = ".\font.otf"
+$BMFontExe = $Config.global.bmfontExe
+$RebuilderDll = $Config.global.xnaFontRebuilder
+$SourceFont = $Config.global.sourceFont
+
+# 转换参数
+$LatinCompensation = $Config.conversion.latinCompensation
+$CharSpacing = $Config.conversion.charSpacing
 
 # 公共函数：检查环境
 function Test-Environment {
@@ -117,35 +104,35 @@ function Build-XnaFontRebuilder {
 function Generate-Font {
     param(
         [string]$FontName,
-        [hashtable]$Config
+        [hashtable]$FontConfig
     )
     
     Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta
     Write-Host "  生成字体: $FontName" -ForegroundColor Cyan
-    Write-Host "  描述: $($Config.Description)" -ForegroundColor Gray
+    Write-Host "  描述: $($FontConfig.Description)" -ForegroundColor Gray
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta
     
     $startTime = Get-Date
     
     # 检查配置文件
-    if (-not (Test-Path $Config.ConfigFile)) {
-        Write-Host "  ✗ 配置文件不存在: $($Config.ConfigFile)" -ForegroundColor Red
+    if (-not (Test-Path $FontConfig.ConfigFile)) {
+        Write-Host "  ✗ 配置文件不存在: $($FontConfig.ConfigFile)" -ForegroundColor Red
         return $false
     }
     
     # 确保输出目录存在
-    if (-not (Test-Path $Config.OutputDir)) {
-        New-Item -ItemType Directory -Path $Config.OutputDir -Force | Out-Null
-        Write-Host "  ✓ 创建输出目录: $($Config.OutputDir)" -ForegroundColor Gray
+    if (-not (Test-Path $FontConfig.OutputDir)) {
+        New-Item -ItemType Directory -Path $FontConfig.OutputDir -Force | Out-Null
+        Write-Host "  ✓ 创建输出目录: $($FontConfig.OutputDir)" -ForegroundColor Gray
     }
     
-    $fontPath = Join-Path $Config.OutputDir $Config.FontFile
-    $txtPath = Join-Path $Config.OutputDir $Config.TxtFile
+    $fontPath = Join-Path $FontConfig.OutputDir $FontConfig.FontFile
+    $txtPath = Join-Path $FontConfig.OutputDir $FontConfig.TxtFile
     
     # 步骤1: 生成 BMFont
     Write-Host "  [1/3] 生成 BMFont 文件..." -ForegroundColor Yellow
     try {
-        $configAbs = Resolve-Path $Config.ConfigFile
+        $configAbs = Resolve-Path $FontConfig.ConfigFile
         $fontAbs = Join-Path $PWD $fontPath
         
         $process = Start-Process -FilePath $BMFontExe `
@@ -161,7 +148,7 @@ function Generate-Font {
         }
         
         # 统计生成的图片
-        $pngFiles = Get-ChildItem -Path $Config.OutputDir -Filter "$($FontName)_*.png" -ErrorAction SilentlyContinue
+        $pngFiles = Get-ChildItem -Path $FontConfig.OutputDir -Filter "$($FontName)_*.png" -ErrorAction SilentlyContinue
         Write-Host "    ✓ 生成成功，纹理图片: $($pngFiles.Count) 张" -ForegroundColor Green
     }
     catch {
@@ -172,7 +159,7 @@ function Generate-Font {
     # 步骤2: 转换格式
     Write-Host "  [2/3] 转换为 TXT 格式..." -ForegroundColor Yellow
     try {
-        dotnet $RebuilderDll $fontPath $txtPath --latin-compensation 0.5 --character-spacing-compensation 1
+        dotnet $RebuilderDll $fontPath $txtPath --latin-compensation $LatinCompensation --character-spacing-compensation $CharSpacing
         
         if ($LASTEXITCODE -ne 0) {
             throw "格式转换失败，退出代码: $LASTEXITCODE"
@@ -194,7 +181,7 @@ function Generate-Font {
     
     $fntSize = (Get-Item $fontPath).Length
     $txtSize = (Get-Item $txtPath).Length
-    $pngCount = (Get-ChildItem -Path $Config.OutputDir -Filter "*.png").Count
+    $pngCount = (Get-ChildItem -Path $FontConfig.OutputDir -Filter "*.png").Count
     
     Write-Host "    ✓ .fnt: $([math]::Round($fntSize/1KB, 2)) KB" -ForegroundColor Green
     Write-Host "    ✓ .txt: $([math]::Round($txtSize/1KB, 2)) KB" -ForegroundColor Green
@@ -214,9 +201,9 @@ function Show-AvailableFonts {
     Write-Host ("{0,-15} {1,-30} {2}" -f "----", "----", "--------") -ForegroundColor Gray
     
     foreach ($name in $fontConfigs.Keys | Sort-Object) {
-        $config = $fontConfigs[$name]
-        $exists = if (Test-Path $config.ConfigFile) { "✓" } else { "✗" }
-        Write-Host ("{0,-15} {1,-30} {2}" -f $name, $config.Description, $exists) -NoNewline
+        $fontCfg = $fontConfigs[$name]
+        $exists = if (Test-Path $fontCfg.ConfigFile) { "✓" } else { "✗" }
+        Write-Host ("{0,-15} {1,-30} {2}" -f $name, $fontCfg.Description, $exists) -NoNewline
         if ($exists -eq "✓") {
             Write-Host " (存在)" -ForegroundColor Green
         } else {
@@ -322,7 +309,7 @@ function Main {
     $totalStart = Get-Date
     
     foreach ($name in $fontsToGenerate.Keys | Sort-Object) {
-        $result = Generate-Font -FontName $name -Config $fontsToGenerate[$name]
+        $result = Generate-Font -FontName $name -FontConfig $fontsToGenerate[$name]
         if ($result) {
             $successList += $name
         } else {

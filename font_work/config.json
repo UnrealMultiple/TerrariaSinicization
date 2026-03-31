@@ -1,0 +1,54 @@
+{
+  "global": {
+    "bmfontExe": "./bmfont64.com",
+    "xnaFontRebuilder": "./XnaFontRebuilder/bin/Release/net8.0/XnaFontRebuilder.dll",
+    "sourceFont": "./ShangguRound-Bold.ttf",
+    "fontInfoDir": "./FontInfo"
+  },
+  "fonts": {
+    "Item_Stack": {
+      "configFile": "./Item_Stack.bmfc",
+      "outputDir": "./Item_Stack",
+      "fontFile": "Item_Stack.fnt",
+      "txtFile": "Item_Stack.txt",
+      "description": "物品堆叠数字字体",
+      "charInfoFile": "./FontInfo/Item_Stack.txt"
+    },
+    "Combat_Crit": {
+      "configFile": "./Combat_Crit.bmfc",
+      "outputDir": "./Combat_Crit",
+      "fontFile": "Combat_Crit.fnt",
+      "txtFile": "Combat_Crit.txt",
+      "description": "战斗暴击数字字体",
+      "charInfoFile": "./FontInfo/Combat_Crit.txt"
+    },
+    "Combat_Text": {
+      "configFile": "./Combat_Text.bmfc",
+      "outputDir": "./Combat_Text",
+      "fontFile": "Combat_Text.fnt",
+      "txtFile": "Combat_Text.txt",
+      "description": "战斗文字字体",
+      "charInfoFile": "./FontInfo/Combat_Text.txt"
+    },
+    "Death_Text": {
+      "configFile": "./Death_Text.bmfc",
+      "outputDir": "./Death_Text",
+      "fontFile": "Death_Text.fnt",
+      "txtFile": "Death_Text.txt",
+      "description": "死亡文字字体",
+      "charInfoFile": "./FontInfo/Death_Text.txt"
+    },
+    "Mouse_Text": {
+      "configFile": "./Mouse_Text.bmfc",
+      "outputDir": "./Mouse_Text",
+      "fontFile": "Mouse_Text.fnt",
+      "txtFile": "Mouse_Text.txt",
+      "description": "鼠标提示文字字体",
+      "charInfoFile": "./FontInfo/Mouse_Text.txt"
+    }
+  },
+  "conversion": {
+    "latinCompensation": 0.5,
+    "charSpacing": 1
+  }
+}
