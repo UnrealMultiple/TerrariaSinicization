@@ -14,25 +14,34 @@ if (-not (Test-Path $ConfigFile)) {
 
 $Config = Get-Content $ConfigFile | ConvertFrom-Json
 
+# 将配置中的相对路径解析为基于脚本目录的绝对路径，
+# 避免工作目录不同导致 BMFont 或 XnaFontRebuilder 找不到文件
+function Resolve-FontWorkPath {
+    param([string]$Path)
+    if ([string]::IsNullOrEmpty($Path)) { return $Path }
+    if ([System.IO.Path]::IsPathRooted($Path)) { return [System.IO.Path]::GetFullPath($Path) }
+    return [System.IO.Path]::GetFullPath((Join-Path $ScriptDir $Path))
+}
+
 # 字体配置列表
 $fontConfigs = @{}
 foreach ($fontName in $Config.fonts.PSObject.Properties.Name) {
     $fontData = $Config.fonts.$fontName
     $fontConfigs[$fontName] = @{
-        ConfigFile = $fontData.configFile
-        OutputDir = $fontData.outputDir
+        ConfigFile = Resolve-FontWorkPath $fontData.configFile
+        OutputDir = Resolve-FontWorkPath $fontData.outputDir
         FontFile = $fontData.fontFile
         TxtFile = $fontData.txtFile
         Description = $fontData.description
-        CharInfoFile = $fontData.charInfoFile
+        CharInfoFile = Resolve-FontWorkPath $fontData.charInfoFile
     }
 }
 
 # 全局配置
-$BMFontExe = $Config.global.bmfontExe
-$XnaFontRebuilder = $Config.global.xnaFontRebuilder
-$SourceFont = $Config.global.sourceFont
-$FontInfoDir = $Config.global.fontInfoDir
+$BMFontExe = Resolve-FontWorkPath $Config.global.bmfontExe
+$XnaFontRebuilder = Resolve-FontWorkPath $Config.global.xnaFontRebuilder
+$SourceFont = Resolve-FontWorkPath $Config.global.sourceFont
+$FontInfoDir = Resolve-FontWorkPath $Config.global.fontInfoDir
 
 # 转换参数
 $LatinCompensation = $Config.conversion.latinCompensation
@@ -53,17 +62,17 @@ function Test-Environment {
     
     # 检查 BMFont
     if (-not (Test-Path $BMFontExe)) {
-        Write-Host "  ✗ 未找到 bmfont64.com" -ForegroundColor Red
+        Write-Host "  ✗ 未找到 BMFont: $BMFontExe" -ForegroundColor Red
         return $false
     }
-    Write-Host "  ✓ bmfont64.com" -ForegroundColor Green
+    Write-Host "  ✓ BMFont: $BMFontExe" -ForegroundColor Green
     
     # 检查源字体
     if (-not (Test-Path $SourceFont)) {
-        Write-Host "  ✗ 未找到 font.otf" -ForegroundColor Red
+        Write-Host "  ✗ 未找到源字体: $SourceFont" -ForegroundColor Red
         return $false
     }
-    Write-Host "  ✓ font.otf" -ForegroundColor Green
+    Write-Host "  ✓ 源字体: $SourceFont" -ForegroundColor Green
     
     # 检查 FontInfo 目录
     if (-not (Test-Path $FontInfoDir)) {
@@ -127,16 +136,8 @@ function Generate-ConfigFile {
     try {
         # 使用 --build-cfg-auto 命令生成配置文件
         # 从 XNA 二进制字体文件提取字符信息并生成 BMFont 配置
-        $cmdArgs = @(
-            "`"$XnaFontRebuilder`""
-            "--build-cfg-auto"
-            "`"$($FontConfig.CharInfoFile)`""
-            "`"$($FontConfig.ConfigFile)`""
-            "`"$SourceFont`""
-        )
-
-        $cmd = "dotnet " + ($cmdArgs -join " ")
-        Invoke-Expression $cmd
+        # 所有路径均为绝对路径，确保 dotnet 进程无论工作目录如何都能正确定位文件
+        & dotnet $XnaFontRebuilder --build-cfg-auto $FontConfig.CharInfoFile $FontConfig.ConfigFile $SourceFont
         
         if ($LASTEXITCODE -ne 0) {
             throw "配置文件生成失败，退出代码: $LASTEXITCODE"
@@ -145,6 +146,12 @@ function Generate-ConfigFile {
         if (-not (Test-Path $FontConfig.ConfigFile)) {
             throw "未找到生成的配置文件"
         }
+        
+        # 打印关键配置项，便于在 CI 日志中排查 BMFont 字体加载问题
+        $fontNameLine = (Select-String -Path $FontConfig.ConfigFile -Pattern '^fontName=' | Select-Object -First 1).Line
+        $fontFileLine = (Select-String -Path $FontConfig.ConfigFile -Pattern '^fontFile=' | Select-Object -First 1).Line
+        Write-Host "    · $fontNameLine" -ForegroundColor Gray
+        Write-Host "    · $fontFileLine" -ForegroundColor Gray
         
         Write-Host "    ✓ 配置文件生成成功: $($FontConfig.ConfigFile)" -ForegroundColor Green
         return $true
@@ -186,12 +193,13 @@ function Generate-Font {
     # 步骤1: 生成 BMFont
     Write-Host "  [1/3] 生成 BMFont 文件..." -ForegroundColor Yellow
     try {
-        $configAbs = Resolve-Path $FontConfig.ConfigFile
-        $fontAbs = Join-Path $PWD $fontPath
-        
+        # BMFont 是 GUI 程序，用 Start-Process -Wait 等待其完成；
+        # 工作目录设为脚本目录，配置文件与输出路径均传绝对路径，
+        # 避免 BMFont 找不到配置文件或字体文件
+        $bmfontArgs = '-c "{0}" -o "{1}"' -f $FontConfig.ConfigFile, $fontPath
         $process = Start-Process -FilePath $BMFontExe `
-            -ArgumentList "-c `"$configAbs`" -o `"$fontAbs`"" `
-            -Wait -PassThru -NoNewWindow -WorkingDirectory $ScriptDir
+            -ArgumentList $bmfontArgs `
+            -Wait -PassThru -WorkingDirectory $ScriptDir
         
         if ($process.ExitCode -ne 0) {
             throw "BMFont 生成失败，退出代码: $($process.ExitCode)"
@@ -201,9 +209,32 @@ function Generate-Font {
             throw "未找到生成的 .fnt 文件"
         }
         
+        # 打印 .fnt 的字符数与页数，便于在 CI 日志中确认 CJK 字形是否被正确渲染
+        try {
+            [xml]$fntXml = Get-Content $fontPath -Raw
+            $fntCharCount = $fntXml.font.chars.count
+            $fntPageCount = $fntXml.font.common.pages
+            Write-Host "    · .fnt 字符数: $fntCharCount, 页数: $fntPageCount" -ForegroundColor Gray
+        } catch {
+            Write-Host "    · 无法解析 .fnt 统计信息: $_" -ForegroundColor Gray
+        }
+        
         # 统计生成的图片
         $pngFiles = Get-ChildItem -Path $FontConfig.OutputDir -Filter "$($FontName)_*.png" -ErrorAction SilentlyContinue
         Write-Host "    ✓ 生成成功，纹理图片: $($pngFiles.Count) 张" -ForegroundColor Green
+
+        # 读取原始字体的页数（FontInfo 二进制文件首字节），用于检测“只生成 1 张纹理”的异常
+        $originalPageCount = 0
+        try {
+            $fs = [System.IO.File]::OpenRead($FontConfig.CharInfoFile)
+            $originalPageCount = $fs.ReadByte()
+            $fs.Close()
+        } catch {}
+
+        if ($originalPageCount -gt 1 -and $pngFiles.Count -le 1) {
+            Write-Host "    ⚠ 警告: 原字体需要 $originalPageCount 页，但只生成了 $($pngFiles.Count) 张纹理！BMFont 可能未正确加载源字体" -ForegroundColor Yellow
+            Write-Host "    ⚠ .fnt 大小: $((Get-Item $fontPath).Length) bytes" -ForegroundColor Yellow
+        }
     }
     catch {
         Write-Host "    ✗ 失败: $_" -ForegroundColor Red

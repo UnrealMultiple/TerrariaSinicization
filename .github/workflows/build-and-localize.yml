@@ -23,11 +23,49 @@ jobs:
         cd font_work\XnaFontRebuilder
         dotnet build -c Release
     
+    - name: Install source font for BMFont
+      shell: pwsh
+      run: |
+        $src = Join-Path $env:GITHUB_WORKSPACE "font_work\ShangguRound-Bold.ttf"
+        $fontDir = Join-Path $env:WINDIR "Fonts"
+        $dst = Join-Path $fontDir "ShangguRound-Bold.ttf"
+
+        # 1) 复制到系统字体目录并写入注册表，使字体全局可用（BMFont 按英文家族名 "Shanggu Round" 匹配）
+        Copy-Item -Force $src $dst
+        New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" `
+          -Name "ShangguRound-Bold (TrueType)" -Value "ShangguRound-Bold.ttf" -PropertyType String -Force | Out-Null
+
+        # 2) 立即注册到当前会话，无需重启
+        Add-Type -TypeDefinition @'
+        using System;
+        using System.Runtime.InteropServices;
+        public static class FontReg {
+            [DllImport("gdi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+            public static extern int AddFontResourceEx(string lpszFilename, uint fl, IntPtr pdv);
+        }
+        '@
+        $ret = [FontReg]::AddFontResourceEx($dst, 0, [IntPtr]::Zero)
+        Write-Host "AddFontResourceEx 返回值: $ret (0 表示失败)"
+
+        # 3) 打印已安装字体，确认英文家族名存在
+        Get-ChildItem $fontDir -Filter "ShangguRound*" | ForEach-Object { Write-Host "  字体文件: $($_.FullName)" }
+    
     - name: Generate fonts using FontXnaBuilder.ps1
       shell: pwsh
       run: |
         cd font_work
         .\FontXnaBuilder.ps1
+    
+    - name: Verify generated font textures
+      shell: pwsh
+      run: |
+        Write-Host "生成的字体纹理 (.png)："
+        Get-ChildItem -Path font_work -Recurse -Filter "*.png" -ErrorAction SilentlyContinue |
+          ForEach-Object { Write-Host ("  {0} ({1:N0} bytes)" -f $_.FullName, $_.Length) }
+        Write-Host "生成的字体数据 (.txt，不含 FontInfo)："
+        Get-ChildItem -Path font_work -Recurse -Filter "*.txt" -ErrorAction SilentlyContinue |
+          Where-Object { $_.FullName -notmatch '\\FontInfo\\' } |
+          ForEach-Object { Write-Host ("  {0} ({1:N0} bytes)" -f $_.FullName, $_.Length) }
     
     - name: Build UnpackTerrariaTextAsset
       run: |
