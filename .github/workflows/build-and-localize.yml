@@ -23,6 +23,10 @@ jobs:
         cd font_work\XnaFontRebuilder
         dotnet build -c Release
     
+    - name: Install Visual C++ Redistributable
+      run: |
+        choco install vcruntime2015 vcruntime2019 --yes --force
+    
     - name: Generate fonts using FontXnaBuilder.ps1
       shell: pwsh
       run: |
