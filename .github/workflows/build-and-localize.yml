@@ -7,11 +7,19 @@ on:
 
 jobs:
   build:
-    runs-on: windows-11
+    runs-on: windows-latest
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
+    
+    - name: Enable Desktop Experience
+      shell: pwsh
+      run: |
+        # Windows Server 2022 默认是 Core 版，缺少 DirectWrite/Direct2D 字体渲染 API
+        # 启用 Desktop Experience 来安装这些 API
+        Install-WindowsFeature Desktop-Experience -IncludeAllSubFeature -ErrorAction SilentlyContinue
+        Install-WindowsFeature Server-Gui-Mgmt-Infra -IncludeAllSubFeature -ErrorAction SilentlyContinue
     
     - name: Setup .NET
       uses: actions/setup-dotnet@v5
