@@ -147,6 +147,14 @@ function Generate-ConfigFile {
             throw "未找到生成的配置文件"
         }
         
+        # 修复 .bmfc 中的字体路径为绝对路径（XnaFontRebuilder 会生成相对路径，BMFont 在 GitHub Actions 上可能无法解析）
+        $configAbsPath = Resolve-Path $FontConfig.ConfigFile
+        $configContent = Get-Content $configAbsPath -Raw
+        $absoluteFontPath = Join-Path $PWD ($SourceFont -replace '^\./', '')
+        $configContent = $configContent -replace 'fontFile=.*', "fontFile=$absoluteFontPath"
+        Set-Content -Path $configAbsPath -Value $configContent
+        Write-Host "    ✓ 已修复字体路径为绝对路径" -ForegroundColor Green
+        
         Write-Host "    ✓ 配置文件生成成功: $($FontConfig.ConfigFile)" -ForegroundColor Green
         return $true
     }
