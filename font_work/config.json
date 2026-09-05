@@ -1,6 +1,6 @@
 {
   "global": {
-    "bmfontExe": "./bmfont64.com",
+    "bmfontExe": "./bmfont64.exe",
     "xnaFontRebuilder": "./XnaFontRebuilder/bin/Release/net8.0/XnaFontRebuilder.dll",
     "sourceFont": "./ShangguRound-Bold.ttf",
     "fontInfoDir": "./FontInfo"

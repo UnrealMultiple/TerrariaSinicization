@@ -191,7 +191,7 @@ function Generate-Font {
         
         $process = Start-Process -FilePath $BMFontExe `
             -ArgumentList "-c `"$configAbs`" -o `"$fontAbs`"" `
-            -Wait -PassThru -NoNewWindow -WorkingDirectory $ScriptDir
+            -Wait -PassThru -WorkingDirectory $ScriptDir
         
         if ($process.ExitCode -ne 0) {
             throw "BMFont 生成失败，退出代码: $($process.ExitCode)"
