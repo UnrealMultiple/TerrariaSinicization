@@ -25,7 +25,7 @@ jobs:
     
     - name: Install Visual C++ Redistributable
       run: |
-        choco install vcruntime2015 vcruntime2019 --yes --force
+        choco install visualstudio2019vcredist visualstudio2022vcredist --yes --force
     
     - name: Generate fonts using FontXnaBuilder.ps1
       shell: pwsh
