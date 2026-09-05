@@ -62,7 +62,10 @@ class Program
     static string GetFontName(string path)
     {
         var description = FontDescription.LoadDescription(path);
-       return description.GetNameById(new CultureInfo("zh-CN"), SixLabors.Fonts.WellKnownIds.KnownNameIds.FontFamilyName);
+        // BMFont 通过 Windows GDI (CreateFontW) 按“家族名”匹配字体，
+        // 必须使用英文家族名（如 "Shanggu Round"）。若用 zh-CN 本地化名（如 "尙古圆体"），
+        // 在 Windows Server Core 上可能无法匹配，导致回退到无 CJK 字形的系统字体、只生成 1 张纹理。
+        return description.GetNameById(CultureInfo.InvariantCulture, SixLabors.Fonts.WellKnownIds.KnownNameIds.FontFamilyName);
     }
 
     #region 基础转换核心逻辑
@@ -221,6 +224,11 @@ class Program
     #region 自动配置生成
     static void BuildCfgAuto(string inputPath, string outputPath, string fontPath)
     {
+        // 将所有路径解析为绝对路径，避免调用方工作目录不同导致找不到文件
+        inputPath = Path.GetFullPath(inputPath);
+        outputPath = Path.GetFullPath(outputPath);
+        fontPath = Path.GetFullPath(fontPath);
+
         List<ushort> ids = new List<ushort>();
         int lineHeight = 0;
 
@@ -317,7 +325,9 @@ class Program
         writer.WriteLine();
         writer.WriteLine("# font settings");
         writer.WriteLine($"fontName={fontName}");
-        writer.WriteLine($"fontFile={Path.GetFileName(fontPath)}");
+        // BMFont 通过 Windows GDI (AddFontResourceEx) 加载字体，需要完整绝对路径，
+        // 否则在 GitHub Actions 上可能解析失败并回退到系统默认字体，导致只生成 1 张纹理
+        writer.WriteLine($"fontFile={fontPath}");
         writer.WriteLine("charSet=0");
         writer.WriteLine($"fontSize={fontSize}");
         writer.WriteLine("aa=4");
