@@ -127,12 +127,13 @@ function Generate-ConfigFile {
     try {
         # 使用 --build-cfg-auto 命令生成配置文件
         # 从 XNA 二进制字体文件提取字符信息并生成 BMFont 配置
+        $absoluteFontPath = Join-Path $PWD ($SourceFont -replace '^\./', '')
         $cmdArgs = @(
             "`"$XnaFontRebuilder`""
             "--build-cfg-auto"
             "`"$($FontConfig.CharInfoFile)`""
             "`"$($FontConfig.ConfigFile)`""
-            "`"$SourceFont`""
+            "`"$absoluteFontPath`""
         )
 
         $cmd = "dotnet " + ($cmdArgs -join " ")
@@ -204,6 +205,10 @@ function Generate-Font {
         # 统计生成的图片
         $pngFiles = Get-ChildItem -Path $FontConfig.OutputDir -Filter "$($FontName)_*.png" -ErrorAction SilentlyContinue
         Write-Host "    ✓ 生成成功，纹理图片: $($pngFiles.Count) 张" -ForegroundColor Green
+        if ($pngFiles.Count -le 1) {
+            Write-Host "    ⚠ 警告: 只生成了 $($pngFiles.Count) 张纹理！BMFont 可能在当前环境无法正确渲染字体" -ForegroundColor Yellow
+            Write-Host "    ⚠ .fnt 大小: $((Get-Item $fontPath).Length) bytes (正常应为 1MB+)" -ForegroundColor Yellow
+        }
     }
     catch {
         Write-Host "    ✗ 失败: $_" -ForegroundColor Red
