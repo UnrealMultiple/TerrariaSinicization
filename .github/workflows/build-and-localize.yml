@@ -25,7 +25,8 @@ jobs:
     
     - name: Install Visual C++ Redistributable
       run: |
-        choco install visualstudio2019vcredist visualstudio2022vcredist --yes --force
+        Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$env:TEMP\vc_redist.x64.exe"
+        Start-Process -FilePath "$env:TEMP\vc_redist.x64.exe" -ArgumentList "/install /quiet /norestart" -Wait
     
     - name: Generate fonts using FontXnaBuilder.ps1
       shell: pwsh
