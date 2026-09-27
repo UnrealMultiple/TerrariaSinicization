@@ -12,7 +12,7 @@ if (-not (Test-Path $ConfigFile)) {
     exit 1
 }
 
-$Config = Get-Content $ConfigFile | ConvertFrom-Json
+$Config = Get-Content -Raw -Path $ConfigFile -Encoding UTF8 | ConvertFrom-Json
 
 # 将配置中的相对路径解析为基于脚本目录的绝对路径，
 # 避免工作目录不同导致 BMFont 或 XnaFontRebuilder 找不到文件
@@ -34,6 +34,8 @@ foreach ($fontName in $Config.fonts.PSObject.Properties.Name) {
         TxtFile = $fontData.txtFile
         Description = $fontData.description
         CharInfoFile = Resolve-FontWorkPath $fontData.charInfoFile
+        ExtraChars = [string]$fontData.extraChars
+        ExtraCharsFile = Resolve-FontWorkPath $fontData.extraCharsFile
     }
 }
 
@@ -42,6 +44,14 @@ $BMFontExe = Resolve-FontWorkPath $Config.global.bmfontExe
 $XnaFontRebuilder = Resolve-FontWorkPath $Config.global.xnaFontRebuilder
 $SourceFont = Resolve-FontWorkPath $Config.global.sourceFont
 $FontInfoDir = Resolve-FontWorkPath $Config.global.fontInfoDir
+
+# 全局额外字符配置（应用到所有字体，与各字体自身的 extraChars 合并）
+$GlobalExtraChars = [string]$Config.global.extraChars
+$GlobalExtraCharsFile = Resolve-FontWorkPath $Config.global.extraCharsFile
+
+# 纹理画布尺寸（像素，默认 1024；2048 可让每页容量翻 4 倍，从而减少总页数）
+$PageSize = [int]$Config.conversion.pageSize
+if ($PageSize -lt 1) { $PageSize = 1024 }
 
 # 转换参数
 $LatinCompensation = $Config.conversion.latinCompensation
@@ -136,11 +146,50 @@ function Generate-ConfigFile {
     try {
         # 使用 --build-cfg-auto 命令生成配置文件
         # 从 XNA 二进制字体文件提取字符信息并生成 BMFont 配置
+        # 通过 --extra-chars / --extra-chars-file 追加 config.json 中配置的额外字符（如额外汉字）
         # 所有路径均为绝对路径，确保 dotnet 进程无论工作目录如何都能正确定位文件
-        & dotnet $XnaFontRebuilder --build-cfg-auto $FontConfig.CharInfoFile $FontConfig.ConfigFile $SourceFont
+        $builderArgs = @(
+            $XnaFontRebuilder,
+            "--build-cfg-auto",
+            $FontConfig.CharInfoFile,
+            $FontConfig.ConfigFile,
+            $SourceFont
+        )
+        if ($GlobalExtraChars) {
+            $builderArgs += "--extra-chars"
+            $builderArgs += $GlobalExtraChars
+        }
+        if ($GlobalExtraCharsFile) {
+            $builderArgs += "--extra-chars-file"
+            $builderArgs += $GlobalExtraCharsFile
+        }
+        if ($FontConfig.ExtraChars) {
+            $builderArgs += "--extra-chars"
+            $builderArgs += $FontConfig.ExtraChars
+        }
+        if ($FontConfig.ExtraCharsFile) {
+            $builderArgs += "--extra-chars-file"
+            $builderArgs += $FontConfig.ExtraCharsFile
+        }
+        if ($PageSize -ne 1024) {
+            $builderArgs += "--page-size"
+            $builderArgs += $PageSize
+        }
+
+        # 打印额外字符摘要，便于排查字符集是否符合预期
+        $extraSummary = $GlobalExtraChars + $FontConfig.ExtraChars
+        if (-not [string]::IsNullOrEmpty($extraSummary)) {
+            $preview = (($extraSummary.ToCharArray() | Select-Object -First 40) -join '')
+            Write-Host "    · 额外字符 $($extraSummary.Length) 个: '$preview'..." -ForegroundColor Gray
+        }
+
+        # 捕获 dotnet 输出并转发到日志，避免其 stdout 泄漏进函数返回值
+        $cfgOut = & dotnet $builderArgs 2>&1
+        $cfgCode = $LASTEXITCODE
+        $cfgOut | ForEach-Object { Write-Host "    $_" -ForegroundColor Gray }
         
-        if ($LASTEXITCODE -ne 0) {
-            throw "配置文件生成失败，退出代码: $LASTEXITCODE"
+        if ($cfgCode -ne 0) {
+            throw "配置文件生成失败，退出代码: $cfgCode"
         }
         
         if (-not (Test-Path $FontConfig.ConfigFile)) {
@@ -193,6 +242,9 @@ function Generate-Font {
     # 步骤1: 生成 BMFont
     Write-Host "  [1/3] 生成 BMFont 文件..." -ForegroundColor Yellow
     try {
+        # 清理旧的纹理文件，避免上次运行残留的多余页干扰统计
+        Get-ChildItem -Path $FontConfig.OutputDir -Filter "$($FontName)_*.png" -ErrorAction SilentlyContinue | Remove-Item -Force
+
         # BMFont 是 GUI 程序，用 Start-Process -Wait 等待其完成；
         # 工作目录设为脚本目录，配置文件与输出路径均传绝对路径，
         # 避免 BMFont 找不到配置文件或字体文件
@@ -201,7 +253,7 @@ function Generate-Font {
             -ArgumentList $bmfontArgs `
             -Wait -PassThru -WorkingDirectory $ScriptDir
         
-        if ($process.ExitCode -ne 0) {
+        if ($process.ExitCode -ne 0 -and $null -ne $process.ExitCode) {
             throw "BMFont 生成失败，退出代码: $($process.ExitCode)"
         }
         
@@ -210,10 +262,12 @@ function Generate-Font {
         }
         
         # 打印 .fnt 的字符数与页数，便于在 CI 日志中确认 CJK 字形是否被正确渲染
+        $fntCharCount = 0
+        $fntPageCount = 0
         try {
             [xml]$fntXml = Get-Content $fontPath -Raw
-            $fntCharCount = $fntXml.font.chars.count
-            $fntPageCount = $fntXml.font.common.pages
+            $fntCharCount = [int]$fntXml.font.chars.count
+            $fntPageCount = [int]$fntXml.font.common.pages
             Write-Host "    · .fnt 字符数: $fntCharCount, 页数: $fntPageCount" -ForegroundColor Gray
         } catch {
             Write-Host "    · 无法解析 .fnt 统计信息: $_" -ForegroundColor Gray
@@ -223,17 +277,27 @@ function Generate-Font {
         $pngFiles = Get-ChildItem -Path $FontConfig.OutputDir -Filter "$($FontName)_*.png" -ErrorAction SilentlyContinue
         Write-Host "    ✓ 生成成功，纹理图片: $($pngFiles.Count) 张" -ForegroundColor Green
 
-        # 读取原始字体的页数（FontInfo 二进制文件首字节），用于检测“只生成 1 张纹理”的异常
+        # 读取原始字体的页数与字符数（FontInfo 二进制文件首字节 + 4 字节 int），
+        # 用于检测“只生成 1 张纹理”或“页数超出原字体”的异常
         $originalPageCount = 0
+        $originalCharCount = 0
         try {
             $fs = [System.IO.File]::OpenRead($FontConfig.CharInfoFile)
             $originalPageCount = $fs.ReadByte()
+            $b1 = $fs.ReadByte(); $b2 = $fs.ReadByte(); $b3 = $fs.ReadByte(); $b4 = $fs.ReadByte()
+            $originalCharCount = ($b4 -shl 24) -bor ($b3 -shl 16) -bor ($b2 -shl 8) -bor $b1
             $fs.Close()
         } catch {}
 
-        if ($originalPageCount -gt 1 -and $pngFiles.Count -le 1) {
-            Write-Host "    ⚠ 警告: 原字体需要 $originalPageCount 页，但只生成了 $($pngFiles.Count) 张纹理！BMFont 可能未正确加载源字体" -ForegroundColor Yellow
+        if ($originalPageCount -gt 1 -and $fntPageCount -le 1) {
+            Write-Host "    ⚠ 警告: 原字体需要 $originalPageCount 页，但只生成了 $fntPageCount 张纹理！BMFont 可能未正确加载源字体" -ForegroundColor Yellow
             Write-Host "    ⚠ .fnt 大小: $((Get-Item $fontPath).Length) bytes" -ForegroundColor Yellow
+        }
+        if ($fntPageCount -gt $originalPageCount) {
+            Write-Host "    · 页数提示: 生成 $fntPageCount 页 > 原字体 $originalPageCount 页，多余纹理页将由 UnpackTerrariaTextAsset 自动新增到游戏 bundle" -ForegroundColor Cyan
+        }
+        if ($originalCharCount -gt 0) {
+            Write-Host "    · 字符数对比: 原 $originalCharCount -> 新 $fntCharCount (+$($fntCharCount - $originalCharCount))" -ForegroundColor Gray
         }
     }
     catch {
@@ -245,10 +309,13 @@ function Generate-Font {
     Write-Host "  [2/3] 转换为 TXT 格式..." -ForegroundColor Yellow
     try {
         # 使用新的命令格式：--convert <input.fnt> <output.txt> [options]
-        dotnet $XnaFontRebuilder --convert $fontPath $txtPath --latin-compensation $LatinCompensation --char-spacing $CharSpacing
+        # 捕获 dotnet 输出并转发到日志，避免其 stdout 泄漏进函数返回值
+        $convOut = & dotnet $XnaFontRebuilder --convert $fontPath $txtPath --latin-compensation $LatinCompensation --char-spacing $CharSpacing 2>&1
+        $convCode = $LASTEXITCODE
+        $convOut | ForEach-Object { Write-Host "    $_" -ForegroundColor Gray }
         
-        if ($LASTEXITCODE -ne 0) {
-            throw "格式转换失败，退出代码: $LASTEXITCODE"
+        if ($convCode -ne 0) {
+            throw "格式转换失败，退出代码: $convCode"
         }
         
         if (-not (Test-Path $txtPath)) {
@@ -289,14 +356,22 @@ function Generate-Font {
 # 公共函数：列出所有可用字体
 function Show-AvailableFonts {
     Write-Host "`n可用字体列表:" -ForegroundColor Cyan
-    Write-Host ("{0,-15} {1,-30} {2,-20} {3}" -f "名称", "描述", "字符信息文件", "配置文件") -ForegroundColor Gray
-    Write-Host ("{0,-15} {1,-30} {2,-20} {3}" -f "----", "----", "--------", "--------") -ForegroundColor Gray
+    Write-Host ("{0,-15} {1,-30} {2,-20} {3,-12} {4}" -f "名称", "描述", "字符信息文件", "额外字符", "配置文件") -ForegroundColor Gray
+    Write-Host ("{0,-15} {1,-30} {2,-20} {3,-12} {4}" -f "----", "----", "--------", "--------", "--------") -ForegroundColor Gray
     
     foreach ($name in $fontConfigs.Keys | Sort-Object) {
         $fontCfg = $fontConfigs[$name]
         $charExists = if (Test-Path $fontCfg.CharInfoFile) { "✓" } else { "✗" }
         $cfgExists = if (Test-Path $fontCfg.ConfigFile) { "✓" } else { "✗" }
-        Write-Host ("{0,-15} {1,-30} {2,-20} {3}" -f $name, $fontCfg.Description, $charExists, $cfgExists)
+        $extraCount = ($GlobalExtraChars + $fontCfg.ExtraChars).Length
+        foreach ($filePath in @($GlobalExtraCharsFile, $fontCfg.ExtraCharsFile)) {
+            if (-not [string]::IsNullOrEmpty($filePath) -and (Test-Path $filePath)) {
+                $text = [System.IO.File]::ReadAllText($filePath)
+                $extraCount += ($text.ToCharArray() | Where-Object { -not [char]::IsWhiteSpace($_) }).Count
+            }
+        }
+        $extraInfo = if ($extraCount -gt 0) { "+$extraCount" } else { "-" }
+        Write-Host ("{0,-15} {1,-30} {2,-20} {3,-12} {4}" -f $name, $fontCfg.Description, $charExists, $extraInfo, $cfgExists)
     }
 }
 

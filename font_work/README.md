@@ -60,7 +60,9 @@ font_work/
     "bmfontExe": "./bmfont64.exe",
     "xnaFontRebuilder": "./XnaFontRebuilder/bin/Release/net8.0/XnaFontRebuilder.dll",
     "sourceFont": "./ShangguRound-Bold.ttf",
-    "fontInfoDir": "./FontInfo"
+    "fontInfoDir": "./FontInfo",
+    "extraChars": "",
+    "extraCharsFile": ""
   },
   "fonts": {
     "Death_Text": {
@@ -69,7 +71,9 @@ font_work/
       "fontFile": "Death_Text.fnt",
       "txtFile": "Death_Text.txt",
       "description": "死亡文字字体",
-      "charInfoFile": "./FontInfo/Death_Text.txt"
+      "charInfoFile": "./FontInfo/Death_Text.txt",
+      "extraChars": "",
+      "extraCharsFile": ""
     }
     // ... 其他字体配置
   },
@@ -87,6 +91,8 @@ font_work/
 - `xnaFontRebuilder`: XnaFontRebuilder DLL 路径
 - `sourceFont`: 源字体文件路径（所有字体共用）
 - `fontInfoDir`: 字体字符信息目录
+- `extraChars`: （可选）应用到**所有字体**的额外字符，直接写字符串，如 `"的了吗"`（UTF-8）
+- `extraCharsFile`: （可选）指向一个 UTF-8 文本文件，文件中出现的每个字符都会应用到所有字体（适合大量汉字；空白字符会被忽略）
 
 **fonts** - 字体配置（每种字体）：
 - `configFile`: BMFont 配置文件路径（生成/使用）
@@ -95,10 +101,23 @@ font_work/
 - `txtFile`: 生成的 .txt 文件名
 - `description`: 字体描述
 - `charInfoFile`: 字符信息文件路径（FontXnaBuilder 使用）
+- `extraChars`: （可选）**该字体专属**额外字符，与 global 的合并生效
+- `extraCharsFile`: （可选）该字体专属额外字符文件，与 global 的合并生效
 
 **conversion** - 转换参数：
 - `latinCompensation`: 拉丁字母额外间距补偿
 - `charSpacing`: 全局字符间距补偿
+
+### 额外字符（extraChars）说明
+
+FontInfo 中的二进制字体文件决定了字体的基础字符集。若需要追加字符（例如 `Combat_Text`、`Item_Stack` 等小字体默认不含汉字），通过 `extraChars` / `extraCharsFile` 配置即可：
+
+- 字符集 = 二进制文件原有字符 ∪ global.extraChars ∪ global.extraCharsFile ∪ 字体级 extraChars ∪ 字体级 extraCharsFile，自动去重
+- 只支持 BMP 范围（U+0000 ~ U+FFFF，XNA 字体 ID 为 ushort），代理对/Emoji 会被跳过
+- 空白与控制字符（空格、换行等）不会作为字形加入
+- 脚本会在日志中打印"额外字符 N 个"及预览
+
+> **页数提示**：生成的字形若超过原字体页数（如小字体从 1 页变成 2 页），脚本会提示，且 `UnpackTerrariaTextAsset` 会自动把多出的纹理页**新增**到游戏 bundle（无需手工处理）。
 
 ## 字体制作流程
 
