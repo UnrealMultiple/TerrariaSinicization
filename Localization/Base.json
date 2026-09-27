@@ -19,8 +19,8 @@
     "ServerStartFailed": "启动服务器失败"
   },
   "Key": {
-    "UP": "Up",
-    "DOWN": "Down"
+    "UP": "向上",
+    "DOWN": "向下"
   },
   "Language": {
     "English": "English",
@@ -177,7 +177,7 @@
     "Save": "保存",
     "Submit": "提交",
     "Cancel": "取消",
-    "SpaceButton": "太空",
+    "SpaceButton": "空格",
     "EnterButton": "输入",
     "RestoreButton": "恢复",
     "WorldSizeSmall": "小",
