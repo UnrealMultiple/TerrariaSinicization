@@ -8828,7 +8828,7 @@
     "HeroicisWingsInactive": "可用合适的材料激活\n每遇挫折，便重新开始...且变得更明智。",
     "NoirMonolith": "“呈现经典电影的视角”",
     "EnchantedPixieDust": "赋予使用者妖精般的气质\n飞行时间:∞\n水平移动:23\n向上飞行:23\n斜向飞行:33\n妖精形态下玩家仅占据1格空间\n好主意，小精灵！可惜太糟糕了",
-    "SoundGun": "“你怎么会有这个？”\n感谢使用亚共版汉化修正！",
+    "SoundGun": "“你怎么会有这个？”\n没事小小bug罢了",
     "LibrarianSkeletonBanner": "{$CommonItemTooltip.BannerBonus}{$NPCName.LibrarianSkeleton}",
     "WaterBoltMimicBanner": "{$CommonItemTooltip.BannerBonus}{$NPCName.WaterBoltMimic}",
     "IvyWhip": "{$CommonItemTooltip.Hook}\n钩子数量:3个\n钩子类型:额外钩子\n射程:25\n发射速度:66\n回收速度:77\n牵引速度:56",
