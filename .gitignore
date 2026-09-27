@@ -371,3 +371,6 @@ font_work/Combat_Crit/
 font_work/Combat_Text/
 font_work/Death_Text/
 font_work/Mouse_Text/
+
+# 构建输出（本地化+字体替换后的 bundle）
+output/
