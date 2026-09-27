@@ -163,58 +163,63 @@ public class UnpackBundle
     {
         try
         {
-            TextureFormat fmt = (TextureFormat)baseField["m_TextureFormat"].AsInt;
-            
-            byte[] platformBlob = TextureHelper.GetPlatformBlob(baseField);
-            uint platform = cont.FileInstance.file.Metadata.TargetPlatform;
-
-            int mips = baseField["m_MipCount"].AsInt;
-            if (mips < 1) mips = 1;
-
-            byte[] encImageBytes = TextureImportExport.Import(filePath, fmt, out int width, out int height, ref mips, platform, platformBlob);
-
-            if (encImageBytes == null)
-            {
-                Console.WriteLine($"导入纹理失败 {Path.GetFileName(filePath)}: 无法编码纹理格式 {fmt}");
-                return;
-            }
-
-            TextureFormat finalFormat = fmt;
-            if (fmt == TextureFormat.ETC_RGB4)
-            {
-                finalFormat = TextureFormat.DXT1;
-                Console.WriteLine($"  格式转换: {fmt} -> {finalFormat}");
-            }
-
-            AssetTypeValueField m_StreamData = baseField["m_StreamData"];
-            m_StreamData["offset"].AsInt = 0;
-            m_StreamData["size"].AsInt = 0;
-            m_StreamData["path"].AsString = "";
-
-            if (!baseField["m_MipCount"].IsDummy)
-                baseField["m_MipCount"].AsInt = mips;
-
-            baseField["m_TextureFormat"].AsInt = (int)finalFormat;
-            baseField["m_CompleteImageSize"].AsInt = encImageBytes.Length;
-            baseField["m_Width"].AsInt = width;
-            baseField["m_Height"].AsInt = height;
-
-            AssetTypeValueField image_data = baseField["image data"];
-            image_data.Value.ValueType = AssetValueType.ByteArray;
-            image_data.TemplateField.ValueType = AssetValueType.ByteArray;
-            image_data.AsByteArray = encImageBytes;
+            ApplyTextureFromFile(baseField, filePath, cont);
 
             byte[] savedAsset = baseField.WriteToByteArray();
             var replacer = new AssetsReplacerFromMemory(
                 cont.PathId, cont.ClassId, cont.MonoId, savedAsset);
             AssetWorkspace.AddReplacer(cont.FileInstance, replacer, new MemoryStream(savedAsset));
 
-            Console.WriteLine($"导入纹理: {Path.GetFileName(filePath)} ({width}x{height}, 格式: {finalFormat})");
+            Console.WriteLine($"导入纹理: {Path.GetFileName(filePath)} ({baseField["m_Width"].AsInt}x{baseField["m_Height"].AsInt}, 格式: {(TextureFormat)baseField["m_TextureFormat"].AsInt})");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"导入纹理失败 {Path.GetFileName(filePath)}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// 将 PNG 文件编码为源纹理同格式的数据，并写入 baseField 的纹理字段（不注册 replacer）。
+    /// </summary>
+    private void ApplyTextureFromFile(AssetTypeValueField baseField, string filePath, AssetContainer cont)
+    {
+        TextureFormat fmt = (TextureFormat)baseField["m_TextureFormat"].AsInt;
+
+        byte[] platformBlob = TextureHelper.GetPlatformBlob(baseField);
+        uint platform = cont.FileInstance.file.Metadata.TargetPlatform;
+
+        int mips = baseField["m_MipCount"].AsInt;
+        if (mips < 1) mips = 1;
+
+        byte[] encImageBytes = TextureImportExport.Import(filePath, fmt, out int width, out int height, ref mips, platform, platformBlob);
+
+        if (encImageBytes == null)
+            throw new Exception($"无法编码纹理格式 {fmt}");
+
+        TextureFormat finalFormat = fmt;
+        if (fmt == TextureFormat.ETC_RGB4)
+        {
+            finalFormat = TextureFormat.DXT1;
+            Console.WriteLine($"  格式转换: {fmt} -> {finalFormat}");
+        }
+
+        AssetTypeValueField m_StreamData = baseField["m_StreamData"];
+        m_StreamData["offset"].AsInt = 0;
+        m_StreamData["size"].AsInt = 0;
+        m_StreamData["path"].AsString = "";
+
+        if (!baseField["m_MipCount"].IsDummy)
+            baseField["m_MipCount"].AsInt = mips;
+
+        baseField["m_TextureFormat"].AsInt = (int)finalFormat;
+        baseField["m_CompleteImageSize"].AsInt = encImageBytes.Length;
+        baseField["m_Width"].AsInt = width;
+        baseField["m_Height"].AsInt = height;
+
+        AssetTypeValueField image_data = baseField["image data"];
+        image_data.Value.ValueType = AssetValueType.ByteArray;
+        image_data.TemplateField.ValueType = AssetValueType.ByteArray;
+        image_data.AsByteArray = encImageBytes;
     }
 
     public void BatchExport()
@@ -904,6 +909,9 @@ public class UnpackBundle
                 }
             }
         }
+
+        // 若生成的字体页数超过 bundle 现有纹理页数，自动新增缺失的纹理页资产
+        AddMissingFontTexturePages(fontName, fontFolder);
     }
 
     private void ReplaceFontTexture(string assetKey, string assetName, AssetContainer cont, AssetTypeValueField baseField, string fontName, string fontFolder)
@@ -982,6 +990,128 @@ public class UnpackBundle
         catch (Exception ex)
         {
             Console.WriteLine($"替换 JSON 失败 {fontName}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 若新生成的字体文件（{fontName}.txt 首字节为页数）页数超过了 bundle 中已有的
+    /// {fontName}_{N}_A 纹理数量，则为缺失的每一页创建新的 Texture2D 资产。
+    /// 游戏按命名约定加载字体纹理页（TextAsset 中无纹理引用），因此新增同名纹理即可生效。
+    /// </summary>
+    private void AddMissingFontTexturePages(string fontName, string fontFolder)
+    {
+        try
+        {
+            string txtPath = Path.Combine(fontFolder, $"{fontName}.txt");
+            if (!File.Exists(txtPath))
+                return;
+
+            byte[] fontData = File.ReadAllBytes(txtPath);
+            if (fontData.Length < 1)
+                return;
+            int newPageCount = fontData[0];
+            if (newPageCount <= 0)
+                return;
+
+            // 统计 bundle 中已有的纹理页，并取第 1 页纹理作为新建资产的模板
+            int existingMax = 0;
+            AssetContainer? sourceTexture = null;
+            foreach (var (_, cont) in LoadAssets)
+            {
+                if (cont.ClassId != 28) continue;
+                var baseField = AssetWorkspace.GetBaseField(cont);
+                if (baseField == null) continue;
+                string? name = baseField["m_Name"]?.AsString;
+                if (string.IsNullOrEmpty(name)) continue;
+
+                var match = System.Text.RegularExpressions.Regex.Match(name, $@"^{fontName}_(\d+)_A$");
+                if (!match.Success) continue;
+
+                int n = int.Parse(match.Groups[1].Value);
+                if (n > existingMax) existingMax = n;
+                if (n == 1) sourceTexture ??= cont;
+            }
+
+            if (newPageCount <= existingMax)
+                return;
+
+            if (sourceTexture == null)
+            {
+                Console.WriteLine($"跳过新增纹理页 {fontName}: bundle 中未找到该字体的纹理资产作为模板");
+                return;
+            }
+
+            int missing = newPageCount - existingMax;
+            Console.WriteLine($"新增纹理页: {fontName} 需要 {newPageCount} 页，bundle 现有 {existingMax} 页，将新增 {missing} 页");
+
+            // 新资产 pathId 取该 assets 文件当前最大 pathId 之后的值
+            long maxPathId = 0;
+            foreach (var (_, cont) in LoadAssets)
+            {
+                if (cont.FileInstance.path == sourceTexture.FileInstance.path && cont.PathId > maxPathId)
+                    maxPathId = cont.PathId;
+            }
+
+            for (int page = existingMax + 1; page <= newPageCount; page++)
+            {
+                int fontWorkIndex = page - 1; // bundle 第 N 页对应 font_work 的 {fontName}_{N-1}.png
+                string? pngPath = FindFontPng(fontFolder, fontName, fontWorkIndex);
+                if (pngPath == null)
+                {
+                    Console.WriteLine($"  跳过第 {page} 页纹理: 未找到 {fontName}_{fontWorkIndex}.png");
+                    continue;
+                }
+
+                long newPathId = maxPathId + (page - existingMax);
+                CreateFontTextureAsset(fontName, page, pngPath, sourceTexture, newPathId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"新增纹理页失败 {fontName}: {ex.Message}");
+        }
+    }
+
+    private static string? FindFontPng(string fontFolder, string fontName, int index)
+    {
+        string twoDigit = Path.Combine(fontFolder, $"{fontName}_{index:D2}.png");
+        if (File.Exists(twoDigit)) return twoDigit;
+
+        string oneDigit = Path.Combine(fontFolder, $"{fontName}_{index:D1}.png");
+        if (File.Exists(oneDigit)) return oneDigit;
+
+        return null;
+    }
+
+    /// <summary>
+    /// 以某张已有字体纹理为模板，创建一张新的 Texture2D 资产（新的 pathId）。
+    /// </summary>
+    private void CreateFontTextureAsset(string fontName, int pageNumber, string pngPath, AssetContainer sourceTexture, long newPathId)
+    {
+        try
+        {
+            AssetTypeValueField srcField = AssetWorkspace.GetBaseField(sourceTexture)!;
+            AssetTypeTemplateField template = AssetWorkspace.GetTemplateField(sourceTexture);
+
+            // 用源纹理的序列化字节重建一个全新的值字段（等价于深拷贝，不共享对象）
+            byte[] srcBytes = srcField.WriteToByteArray();
+            using var ms = new MemoryStream(srcBytes);
+            using var reader = new AssetsFileReader(ms);
+            AssetTypeValueField newField = template.MakeValue(reader, 0, null);
+
+            // 填入 PNG 纹理数据并设置资产名称
+            ApplyTextureFromFile(newField, pngPath, sourceTexture);
+            newField["m_Name"].AsString = $"{fontName}_{pageNumber}_A";
+
+            byte[] savedAsset = newField.WriteToByteArray();
+            var replacer = new AssetsReplacerFromMemory(newPathId, 28, sourceTexture.MonoId, savedAsset);
+            AssetWorkspace.AddReplacer(sourceTexture.FileInstance, replacer, new MemoryStream(savedAsset));
+
+            Console.WriteLine($"新增纹理: {fontName}_{pageNumber}_A <- {Path.GetFileName(pngPath)} (pathId={newPathId})");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"新增纹理失败 {fontName}_{pageNumber}_A: {ex.Message}");
         }
     }
 }
