@@ -3,7 +3,9 @@
     "bmfontExe": "./bmfont64.exe",
     "xnaFontRebuilder": "./XnaFontRebuilder/bin/Release/net8.0/XnaFontRebuilder.dll",
     "sourceFont": "./ShangguRound-Bold.ttf",
-    "fontInfoDir": "./FontInfo"
+    "fontInfoDir": "./FontInfo",
+    "extraChars": "",
+    "extraCharsFile": ""
   },
   "fonts": {
     "Item_Stack": {
@@ -12,7 +14,9 @@
       "fontFile": "Item_Stack.fnt",
       "txtFile": "Item_Stack.txt",
       "description": "物品堆叠数字字体",
-      "charInfoFile": "./FontInfo/Item_Stack.txt"
+      "charInfoFile": "./FontInfo/Item_Stack.txt",
+      "extraChars": "",
+      "extraCharsFile": ""
     },
     "Combat_Crit": {
       "configFile": "./Combat_Crit.bmfc",
@@ -20,7 +24,9 @@
       "fontFile": "Combat_Crit.fnt",
       "txtFile": "Combat_Crit.txt",
       "description": "战斗暴击数字字体",
-      "charInfoFile": "./FontInfo/Combat_Crit.txt"
+      "charInfoFile": "./FontInfo/Combat_Crit.txt",
+      "extraChars": "",
+      "extraCharsFile": ""
     },
     "Combat_Text": {
       "configFile": "./Combat_Text.bmfc",
@@ -28,7 +34,9 @@
       "fontFile": "Combat_Text.fnt",
       "txtFile": "Combat_Text.txt",
       "description": "战斗文字字体",
-      "charInfoFile": "./FontInfo/Combat_Text.txt"
+      "charInfoFile": "./FontInfo/Combat_Text.txt",
+      "extraChars": "",
+      "extraCharsFile": ""
     },
     "Death_Text": {
       "configFile": "./Death_Text.bmfc",
@@ -36,7 +44,9 @@
       "fontFile": "Death_Text.fnt",
       "txtFile": "Death_Text.txt",
       "description": "死亡文字字体",
-      "charInfoFile": "./FontInfo/Death_Text.txt"
+      "charInfoFile": "./FontInfo/Death_Text.txt",
+      "extraChars": "",
+      "extraCharsFile": "./ExtraChars/extra_chars.txt"
     },
     "Mouse_Text": {
       "configFile": "./Mouse_Text.bmfc",
@@ -44,11 +54,14 @@
       "fontFile": "Mouse_Text.fnt",
       "txtFile": "Mouse_Text.txt",
       "description": "鼠标提示文字字体",
-      "charInfoFile": "./FontInfo/Mouse_Text.txt"
+      "charInfoFile": "./FontInfo/Mouse_Text.txt",
+      "extraChars": "",
+      "extraCharsFile": "./ExtraChars/extra_chars_full.txt"
     }
   },
   "conversion": {
     "latinCompensation": 0.5,
-    "charSpacing": 1
+    "charSpacing": 1,
+    "pageSize": 1024
   }
 }

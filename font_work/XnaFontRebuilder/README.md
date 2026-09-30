@@ -45,24 +45,30 @@ dotnet XnaFontRebuilder.dll --convert Combat_Text.fnt Combat_Text.txt --latin-co
 从现有的 XNA 二进制字体文件（.txt）读取字符信息，生成 BMFont 配置文件：
 
 ```bash
-dotnet XnaFontRebuilder.dll --build-cfg-auto <input.bin> <output.bmfc> <fontPath>
+dotnet XnaFontRebuilder.dll --build-cfg-auto <input.bin> <output.bmfc> <fontPath> [--extra-chars <chars>] [--extra-chars-file <path>]
 ```
 
 **参数：**
 - `input.bin`: 输入的 XNA 二进制字体文件路径（.txt 格式）
 - `output.bmfc`: 生成的 BMFont 配置文件路径
 - `fontPath`: 源字体文件路径（用于获取字体名称，如 font.otf）
+- `--extra-chars <chars>`: （可选，可重复）额外字符，会合并进字符集，例如 `--extra-chars "测试"`。支持中文等任意 BMP 字符
+- `--extra-chars-file <path>`: （可选，可重复）UTF-8 文本文件，文件中的每个字符都会合并进字符集（适合大量汉字）
 
 **工作原理：**
 1. 读取 XNA 二进制文件中的所有字符 ID
-2. 将字符 ID 排序并合并为连续范围（如 32-127, 161-511）
-3. 读取文件尾部的 lineHeight 作为字体大小
-4. 生成标准的 BMFont 配置文件（.bmfc）
+2. 合并 `--extra-chars` / `--extra-chars-file` 指定的额外字符（自动去重；仅保留 BMP U+0000~U+FFFF；跳过空白/控制字符）
+3. 将字符 ID 排序并合并为连续范围（如 32-127, 161-511）
+4. 读取文件尾部的 lineHeight 作为字体大小
+5. 生成标准的 BMFont 配置文件（.bmfc）
 
 **示例：**
 ```bash
 # 从现有 XNA 字体文件生成 BMFont 配置
 dotnet XnaFontRebuilder.dll --build-cfg-auto Death_Text.txt Death_Text.bmfc font.otf
+
+# 追加额外汉字
+dotnet XnaFontRebuilder.dll --build-cfg-auto Item_Stack.txt Item_Stack.bmfc font.otf --extra-chars "测测试试" --extra-chars-file ./extra_chars.txt
 ```
 
 ## 项目结构
