@@ -5,22 +5,22 @@
     "ServerCrash": "服务器崩溃：{0}\n{1}\n请将 crashlog.txt 发送至 support@terraria.org",
     "LoadFailed": "加载失败！",
     "LoadFailedNoBackup": "加载失败！找不到备份。",
-    "InvalidLobbyFlag": "-使用了lobby标志，但没有\"{0}\"或\"{1}\"。已忽略。",
-    "CaptureError": "保存捕获数据时出错。正在重试...",
+    "InvalidLobbyFlag": "-大厅旗帜已使用，没有\"{0}\"或\"{1}\"。请忽略它。",
+    "CaptureError": "保存截图时出错。正在重试...",
     "UnableToCapture": "无法截图。",
     "UnableToWritePreferences": "无法在以下位置写入文件：{0}",
     "UnableToLoadWorld": "无法加载世界：",
     "BadHeaderBufferOverflow": "标头错误导致读取缓冲区溢出。",
     "ExceptionNormal": "   普通异常：{0}",
     "TriedToRunServerTwice": "尝试在同一台计算机上运行两个服务器",
-    "DataSentAfterConnectionLost": "尝试在失去连接后将数据发送至客户端",
+    "DataSentAfterConnectionLost": "尝试在断开连接后将数据发送至客户端",
     "NetMessageError": "消息 {0} 出错",
     "CaptureOutOfMemory": "截图时内存不足。请减小截图尺寸或尝试重启游戏。",
-    "ServerStartFailed": "启动会话失败"
+    "ServerStartFailed": "启动服务器失败"
   },
   "Key": {
-    "UP": "向上键",
-    "DOWN": "向下键"
+    "UP": "向上",
+    "DOWN": "向下"
   },
   "Language": {
     "English": "English",
@@ -177,7 +177,7 @@
     "Save": "保存",
     "Submit": "提交",
     "Cancel": "取消",
-    "SpaceButton": "太空",
+    "SpaceButton": "空格",
     "EnterButton": "输入",
     "RestoreButton": "恢复",
     "WorldSizeSmall": "小",
