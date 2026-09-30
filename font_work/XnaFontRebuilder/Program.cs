@@ -34,7 +34,7 @@ class Program
             {
                 if (args.Length < 4)
                 {
-                    Console.WriteLine("Usage: XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> <fontPath>");
+                    Console.WriteLine("Usage: XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> <fontPath> [--extra-chars <chars>] [--extra-chars-file <path>]");
                     return 1;
                 }
 
@@ -42,7 +42,8 @@ class Program
                 string outputPath = args[2];
                 string fontPath = args[3];
 
-                BuildCfgAuto(inputPath, outputPath, fontPath);
+                var extraOptions = ParseExtraCharsArgs(args.Skip(4).ToArray());
+                BuildCfgAuto(inputPath, outputPath, fontPath, extraOptions);
                 Console.WriteLine("Generated config: " + outputPath);
                 return 0;
             }
@@ -222,7 +223,7 @@ class Program
     #endregion
 
     #region 自动配置生成
-    static void BuildCfgAuto(string inputPath, string outputPath, string fontPath)
+    static void BuildCfgAuto(string inputPath, string outputPath, string fontPath, ExtraCharsOptions extraOptions)
     {
         // 将所有路径解析为绝对路径，避免调用方工作目录不同导致找不到文件
         inputPath = Path.GetFullPath(inputPath);
@@ -255,7 +256,107 @@ class Program
             }
         }
 
-        GenerateCfg(ids, lineHeight, outputPath, fontPath);
+        // 合并配置中指定的额外字符（如额外汉字），去重后加入字符集
+        List<ushort> extraIds = LoadExtraCharIds(extraOptions);
+        if (extraIds.Count > 0)
+        {
+            var merged = new HashSet<ushort>(ids);
+            merged.UnionWith(extraIds);
+            ids = merged.ToList();
+            Console.WriteLine($"Extra chars merged: +{extraIds.Count} distinct (total {ids.Count})");
+            var preview = string.Concat(extraIds.Take(50).Select(id => char.ConvertFromUtf32(id)));
+            Console.WriteLine($"Extra chars preview: {preview}");
+        }
+
+        GenerateCfg(ids, lineHeight, outputPath, fontPath, extraOptions.PageSize);
+    }
+
+    /// <summary>
+    /// 解析 --build-cfg-auto 的额外参数（--extra-chars / --extra-chars-file / --page-size，均可重复出现）
+    /// </summary>
+    static ExtraCharsOptions ParseExtraCharsArgs(string[] args)
+    {
+        string extraChars = "";
+        var extraCharFiles = new List<string>();
+        int pageSize = 1024;
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--extra-chars":
+                    if (i + 1 >= args.Length)
+                        throw new ArgumentException("--extra-chars requires a value.");
+                    extraChars += args[++i];
+                    break;
+                case "--extra-chars-file":
+                    if (i + 1 >= args.Length)
+                        throw new ArgumentException("--extra-chars-file requires a value.");
+                    extraCharFiles.Add(args[++i]);
+                    break;
+                case "--page-size":
+                    if (i + 1 >= args.Length)
+                        throw new ArgumentException("--page-size requires a value.");
+                    pageSize = int.Parse(args[++i], CultureInfo.InvariantCulture);
+                    break;
+                default:
+                    throw new ArgumentException($"Unknown argument: {args[i]}");
+            }
+        }
+
+        return new ExtraCharsOptions(extraChars, extraCharFiles, pageSize);
+    }
+
+    /// <summary>
+    /// 收集额外字符的码点：字符串 + 各 UTF-8 文件中的全部字符。
+    /// 只保留 BMP（&lt;= U+FFFF，XNA 字体 ID 为 ushort），跳过空白与代理对超界字符。
+    /// </summary>
+    static List<ushort> LoadExtraCharIds(ExtraCharsOptions options)
+    {
+        var result = new List<ushort>();
+
+        void AddText(string text, string source)
+        {
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                int codePoint;
+                if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    codePoint = char.ConvertToUtf32(c, text[i + 1]);
+                    i++;
+                }
+                else
+                {
+                    codePoint = c;
+                }
+
+                // 跳过空白/控制字符（空格通常已存在于字体中，文件里的换行也不应被当作字形）
+                if (codePoint < 0x20 || char.IsWhiteSpace((char)codePoint))
+                    continue;
+                if (codePoint > 0xFFFF)
+                {
+                    Console.WriteLine($"Warning: codepoint U+{codePoint:X4} (from {source}) is outside the BMP range supported by XNA fonts and was skipped.");
+                    continue;
+                }
+                result.Add((ushort)codePoint);
+            }
+        }
+
+        AddText(options.ExtraChars, "--extra-chars");
+        foreach (string path in options.ExtraCharFiles)
+        {
+            string fullPath = Path.GetFullPath(path);
+            if (!File.Exists(fullPath))
+            {
+                Console.WriteLine($"Warning: extra chars file not found: {fullPath}");
+                continue;
+            }
+            using var reader = new StreamReader(fullPath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            AddText(reader.ReadToEnd(), fullPath);
+        }
+
+        return result.Distinct().ToList();
     }
 
     /// <summary>
@@ -291,7 +392,7 @@ class Program
         };
     }
 
-    static void GenerateCfg(List<ushort> ids, int fontSize, string outputPath, string fontPath)
+    static void GenerateCfg(List<ushort> ids, int fontSize, string outputPath, string fontPath, int pageSize = 1024)
     {
         ids.Sort();
         var ranges = new List<string>();
@@ -358,8 +459,8 @@ class Program
         writer.WriteLine("widthPaddingFactor=0.00");
         writer.WriteLine();
         writer.WriteLine("# output file");
-        writer.WriteLine("outWidth=1024");
-        writer.WriteLine("outHeight=1024");
+        writer.WriteLine($"outWidth={pageSize}");
+        writer.WriteLine($"outHeight={pageSize}");
         writer.WriteLine("outBitDepth=32");
         writer.WriteLine("fontDescFormat=1");
         writer.WriteLine("fourChnlPacked=0");
@@ -409,7 +510,8 @@ class Program
         Console.WriteLine("Usage:");
         Console.WriteLine("  XnaFontRebuilder --convert <input.fnt> [output.txt] [options]");
         Console.WriteLine("    Options: --line-height <value>, --ascii-extra-spacing <value>, --character-spacing-compensation <value>");
-        Console.WriteLine("  XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> <fontPath>");
+        Console.WriteLine("  XnaFontRebuilder --build-cfg-auto <input.bin> <output.cfg> <fontPath> [--extra-chars <chars>] [--extra-chars-file <path>]");
+        Console.WriteLine("    Options: --extra-chars <chars> (repeatable, appended), --extra-chars-file <path> (repeatable, UTF-8)");
     }
     #endregion
 }
@@ -420,6 +522,12 @@ internal sealed record BaseConversionOptions(
     int LineHeightOverride,
     float AsciiExtraSpacing,
     float CharacterSpacingCompensation
+);
+
+internal sealed record ExtraCharsOptions(
+    string ExtraChars,
+    IReadOnlyList<string> ExtraCharFiles,
+    int PageSize
 );
 
 struct GlyphRecord
