@@ -1,0 +1,59 @@
+name: Cleanup old data.unity3d release assets
+
+# 目的：原版 data.unity3d 不再提交进 git（避免 LFS 配额随版本增长），
+#       而是作为 Release 附件保存。本工作流每月自动扫描所有 Release 里
+#       名为 data.unity3d 的附件，只保留最新一份，删除其余旧版。
+# 说明：Release 附件不占 Git LFS 配额，因此"只保留最新版"由本工作流自动达成，
+#       git 历史/LFS 不再随游戏版本更新而膨胀。
+
+on:
+  schedule:
+    - cron: '15 3 1 * *'          # 每月 1 日 03:15 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write                 # 需要删除 Release 附件
+
+concurrency:
+  group: cleanup-data-unity3d-releases
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prune data.unity3d assets (keep newest only)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ASSET="data.unity3d"
+          REPO="${{ github.repository }}"
+
+          # 收集所有 Release 中名为 data.unity3d 的附件（id + updated_at）
+          gh api "repos/$REPO/releases?per_page=100" \
+            --jq '[ .[] | .assets[]? | select(.name == "data.unity3d") | { id, updated_at } ]' \
+            > /tmp/assets.json || { echo "::notice::查询 Release 失败，跳过"; exit 0; }
+
+          if [ ! -s /tmp/assets.json ]; then echo "[]" > /tmp/assets.json; fi
+
+          COUNT=$(jq 'length' /tmp/assets.json)
+          echo "找到 $COUNT 个名为 $ASSET 的附件"
+          if [ "$COUNT" -le 1 ]; then
+            echo "无需清理（当前 <= 1 个，已是最新状态）"
+            exit 0
+          fi
+
+          # ISO8601 的 updated_at 可直接按字典序排序，保留最新一条，删除其余
+          LATEST_ID=$(jq -r 'sort_by(.updated_at) | last | .id' /tmp/assets.json)
+          echo "保留最新附件 id=$LATEST_ID"
+
+          jq -c '.[] | select(.id != '"$LATEST_ID"')' /tmp/assets.json | while IFS= read -r a; do
+            id=$(echo "$a" | jq -r .id)
+            upd=$(echo "$a" | jq -r .updated_at)
+            echo "删除旧附件 id=$id (updated_at=$upd)"
+            gh api -X DELETE "repos/$REPO/releases/assets/$id" --silent
+          done
+
+          echo "清理完成：仅保留最新版 data.unity3d 附件"
