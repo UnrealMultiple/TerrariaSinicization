@@ -5,6 +5,13 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: read                  # 构建只需读取，最小权限
+
+concurrency:
+  group: build-and-localize
+  cancel-in-progress: false       # 构建不要被新的运行取消（避免丢制品）
+
 jobs:
   build:
     runs-on: windows-latest
@@ -12,6 +19,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
+      with:
+        lfs: true                 # 显式拉取 LFS 文件真实内容，避免 data.unity3d 以指针文本落盘
     
     - name: Setup .NET
       uses: actions/setup-dotnet@v5
@@ -115,6 +124,37 @@ jobs:
     - name: Create output directory
       run: |
         New-Item -ItemType Directory -Force -Path "${{ steps.paths.outputs.OUTPUT_DIR }}"
+    
+    - name: Fetch latest original bundle from GitHub Release
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}   # 必须传，否则 gh 在 runner 上未登录，查不到 Release
+      run: |
+        # 原版包优先从【上游仓库】Release 拉取最新附件（固定上游：fork 也能拉到原版包）；
+        # 找不到时回退到仓库内 Resources/data.unity3d（过渡期）。
+        $repo = "UnrealMultiple/TerrariaSinicization"
+        $assets = gh api "repos/$repo/releases?per_page=100" --jq '[ .[] | .assets[]? | select(.name == "data.unity3d") | { updated_at, browser_download_url } ]' 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($assets) -or $assets.Trim() -eq "[]") {
+          Write-Host "::warning::Release 中未找到 data.unity3d 附件（gh 退出码: $LASTEXITCODE）。请确认：Release 已发布（非 Draft）且附件名精确为 data.unity3d（见 scripts/upload-data-unity3d.ps1）。"
+        } else {
+          $latest = $assets | ConvertFrom-Json | Sort-Object updated_at | Select-Object -Last 1
+          Write-Host "从 Release 下载最新原版包: $($latest.browser_download_url)"
+          $tmp = "$env:RUNNER_TEMP\upstream.unity3d"
+          curl -L --fail -o $tmp "$($latest.browser_download_url)"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::下载原版包失败"; exit 1 }
+          # 校验 Unity 包头，避免坏文件进入构建
+          $fs = [System.IO.File]::OpenRead($tmp); $buf = [byte[]]::new(8); [void]$fs.Read($buf, 0, 8); $fs.Close()
+          $sig = [System.Text.Encoding]::ASCII.GetString($buf)
+          if ($sig -notlike "UnityFS*") { Write-Host "::error::下载内容不是有效 Unity 资源包（签名: $sig）"; exit 1 }
+          $bundlePath = "${{ steps.paths.outputs.BUNDLE_PATH }}"
+          New-Item -ItemType Directory -Force -Path (Split-Path $bundlePath) | Out-Null
+          Copy-Item -Force $tmp $bundlePath
+          Write-Host "已用 Release 最新版替换构建输入 bundle"
+        }
+        if (-not (Test-Path "${{ steps.paths.outputs.BUNDLE_PATH }}")) {
+          Write-Host "::error::构建输入缺失：Resources/data.unity3d（Release 无附件且仓库无此文件，请先用 scripts/upload-data-unity3d.ps1 上传附件）"
+          exit 1
+        }
     
     - name: Localize and replace fonts
       run: |

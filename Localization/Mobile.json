@@ -929,14 +929,6 @@
     "MultiplayerSettingsCategory": "多人模式",
     "NewServerEntryWorldName": "加入服务器获取世界信息……"
   },
-  "DiscordPresence": {
-    "Menu": "在菜单中",
-    "Tutorial": "在教程中",
-    "SinglePlayer": "在单人游戏中",
-    "LocalMultiplayer": "在本地多人游戏中",
-    "OnlineMultiplayer": "在在线多人游戏中",
-    "CrossplayMultiplayer": "在跨平台多人游戏中"
-  },
   "ProfileName": {
     "Profile1": "全屏",
     "Profile2": "拆分屏幕"

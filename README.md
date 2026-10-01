@@ -31,11 +31,29 @@ UnpackTerrariaTextAsset/
 │   ├── Items.json
 │   ├── NPCs.json
 │   └── ...
-├── Resources/                       # 原始游戏资源
-│   └── data.unity3d
+├── scripts/                         # 维护脚本
+│   └── upload-data-unity3d.ps1      # 游戏更新后上传最新原版包
 └── .github/workflows/               # GitHub Actions 工作流
-    └── build-and-localize.yml
+    ├── build-and-localize.yml       # 汉化构建（自动拉取最新原版包）
+    └── cleanup-data-unity3d-releases.yml  # 每月清理旧版原版包，只留最新
 ```
+
+## 🎮 游戏版本更新时：更新原版资源包
+
+构建使用的**原版游戏资源** `data.unity3d` 不再存入 git 历史，而是挂在本仓库的 **GitHub Release 附件**上（Release 附件不计入 Git LFS 配额，且天然"只保留想要的版本"）。游戏更新后，只需一条命令：
+
+```powershell
+# 1. 安装并登录 GitHub CLI（仅首次）
+winget install GitHub.cli
+gh auth login
+
+# 2. 上传最新原版包（同名附件自动覆盖，永远只有最新一份）
+.\scripts\upload-data-unity3d.ps1 -BundlePath "你提取的新版 data.unity3d 路径"
+```
+
+- 构建工作流会自动从 Release 拉取这份最新原版包，无需在仓库里提交大文件；
+- [cleanup-data-unity3d-releases.yml](.github/workflows/cleanup-data-unity3d-releases.yml) 每月自动清理，保证 Release 上只保留最新一份；
+- 维护说明见 **[scripts/README.md](./scripts/README.md)**。
 
 ## 📝 如何自定义汉化
 
@@ -85,6 +103,20 @@ UnpackTerrariaTextAsset/
 ### 步骤 4：重新签名
 
 最后对修改后的安装包进行重新签名，汉化 Terraria 就完成了！
+
+<br />
+
+## 🧰 克隆与 Git LFS
+
+本仓库通过 **Git LFS** 存储字体等大文件。普通克隆即可，但**本机需要安装 git-lfs**（Windows 版 Git 官方安装包自带，`git lfs version` 可确认）：
+
+```bash
+git clone https://github.com/UnrealMultiple/TerrariaSinicization.git
+```
+
+- 已安装 git-lfs：checkout 时自动下载大文件，体验与普通仓库一致；
+- 未安装 git-lfs：大文件会以几十字节的"指针文本"落盘，需执行 `git lfs install && git lfs pull` 补充下载；
+- 只改翻译、不想下载大文件：用 `GIT_LFS_SKIP_SMUDGE=1 git clone <地址>` 克隆，提交 PR 不受影响。
 
 <br />
 
@@ -153,12 +185,14 @@ git push origin improve-translation
 - **[UnpackTerrariaTextAsset](./UnpackTerrariaTextAsset/README.md)** - 资源处理工具完整文档
 - **[font\_work](./font_work/README.md)** - 字体制作工具文档
 - **[XnaFontRebuilder](./font_work/XnaFontRebuilder/README.md)** - 字体格式转换工具
+- **[scripts](./scripts/README.md)** - 维护脚本与 LFS 历史清理手册
 
 ## 🛠️ 系统要求
 
 - .NET 8.0 SDK/运行时（本地构建需要）
 - Windows 操作系统
 - GitHub 账号（使用 Actions 需要）
+- Git LFS（克隆仓库需要；Windows 版 Git 官方安装包自带）
 
 ## 📄 许可证
 

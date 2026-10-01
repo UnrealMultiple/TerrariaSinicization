@@ -816,31 +816,7 @@ public class UnpackBundle
 
             int addedCount = 0;
             int removedCount = 0;
-
-            var keysToRemove = new List<string>();
-            
-            foreach (var prop in localizationObj.Properties())
-            {
-                if (zhHansObj[prop.Name] == null)
-                {
-                    keysToRemove.Add(prop.Name);
-                    removedCount++;
-                }
-            }
-
-            foreach (var key in keysToRemove)
-            {
-                localizationObj.Remove(key);
-            }
-
-            foreach (var prop in zhHansObj.Properties())
-            {
-                if (localizationObj[prop.Name] == null)
-                {
-                    localizationObj[prop.Name] = prop.Value;
-                    addedCount++;
-                }
-            }
+            SyncToken(zhHansObj, localizationObj, ref addedCount, ref removedCount);
 
             if (addedCount > 0 || removedCount > 0)
             {
@@ -856,6 +832,55 @@ public class UnpackBundle
         catch (Exception ex)
         {
             Console.WriteLine($"Error syncing {Path.GetFileName(localizationFile)}: {ex.Message}");
+        }
+    }
+
+    // 递归键级同步：以 data.unity3d 导出的 zh-Hans JSON 为"键"的权威来源
+    //  - 本地缺失的键（含深层，如 ItemName.DirtBlock）→ 从 zh-Hans 补齐（初始值=游戏官方中文，译者再改）
+    //  - 本地多余的键（含深层，如 ItemName.OldKey）→ 删除
+    //  - 叶子键值不同 → 保留本地已有翻译，不覆盖
+    //  - 结构不一致（叶子/对象互换）→ 以 zh-Hans 为准，整棵替换（不计数）
+    private static void SyncToken(Newtonsoft.Json.Linq.JObject source, Newtonsoft.Json.Linq.JObject target, ref int added, ref int removed)
+    {
+        // 1) 先删：target 有、source 没有的键（整棵子树删除）
+        foreach (var prop in target.Properties().ToList())
+        {
+            if (source[prop.Name] == null)
+            {
+                prop.Remove();
+                removed++;
+            }
+        }
+
+        // 2) 再同步共有键：都是对象则递归深入；结构不一致时以 source 为准
+        foreach (var prop in target.Properties().ToList())
+        {
+            var sourceProp = source[prop.Name];
+            if (sourceProp == null)
+            {
+                continue;
+            }
+
+            if (prop.Value is Newtonsoft.Json.Linq.JObject targetObj &&
+                sourceProp is Newtonsoft.Json.Linq.JObject sourceObj)
+            {
+                SyncToken(sourceObj, targetObj, ref added, ref removed);
+            }
+            else if (prop.Value.Type != sourceProp.Type)
+            {
+                // 游戏改了结构（叶子↔对象）：整棵换成 data.unity3d 的
+                prop.Value = sourceProp.DeepClone();
+            }
+        }
+
+        // 3) 最后补：source 有、target 没有的键
+        foreach (var prop in source.Properties())
+        {
+            if (target[prop.Name] == null)
+            {
+                target[prop.Name] = prop.Value.DeepClone();
+                added++;
+            }
         }
     }
 

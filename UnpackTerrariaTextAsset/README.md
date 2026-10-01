@@ -102,12 +102,13 @@ localization/
 UnpackTerrariaTextAsset.exe -diff <data.unity3d路径> <本地化文件夹路径>
 ```
 
-**此命令会：**
+**此命令会（键级、递归同步，以 data.unity3d 为权威）：**
 1. 读取 data.unity3d 中的 zh-Hans 语言文件
-2. 与 localization 文件夹中的对应文件进行对比
-3. 添加 zh-Hans 中有但 localization 中没有的新内容
-4. 删除 localization 中有但 zh-Hans 中没有的过时内容
-5. 保存更新后的 localization 文件
+2. 与 localization 文件夹中的对应文件逐键（含多层嵌套，如 `ItemName.DirtBlock`）对比
+3. 添加 zh-Hans 有但 localization 没有的键（深层缺失也补，初始值为游戏官方中文）
+4. 删除 localization 有但 zh-Hans 没有的键（深层多余也删）
+5. 已有翻译的键值保持不变，不会被官方文本覆盖
+6. 保存更新后的 localization 文件
 
 ### 5. 字体替换
 
