@@ -735,6 +735,12 @@ public class UnpackBundle
             Console.WriteLine($"Created localization folder: {localizationFolder}");
         }
 
+        // 按键收集：zh-Hans 是官方中文权威来源；en-US 仍需保留其独有的键。
+        // 构建时 en-US 资源会被本文件夹的 JSON 整体替换，因此只同步 zh-Hans 会导致
+        // "官方中文未翻译、但英文仍在使用" 的键从产物中消失（游戏中显示为键名）。
+        var zhHansAssets = new Dictionary<string, (string AssetName, byte[] Data)>();
+        var enUsAssets = new Dictionary<string, (string AssetName, byte[] Data)>();
+
         foreach (var (assetKey, cont) in LoadAssets)
         {
             var baseField = AssetWorkspace.GetBaseField(cont);
@@ -763,21 +769,41 @@ public class UnpackBundle
 
             if (assetName.StartsWith("zh-Hans"))
             {
-                var category = ExtractCategoryFromZhHans(assetName);
-                if (category != null)
+                var category = ExtractCategory(assetName, "zh-Hans");
+                if (category != null && !assetName.Contains("_comp"))
                 {
-                    var localizationFile = Path.Combine(localizationFolder, $"{category}.json");
-                    SyncJsonFiles(byteData, localizationFile, assetName);
+                    zhHansAssets[category] = (assetName, byteData);
+                }
+            }
+            else if (assetName.StartsWith("en-US"))
+            {
+                var category = ExtractCategory(assetName, "en-US");
+                if (category != null && !assetName.Contains("_comp"))
+                {
+                    enUsAssets[category] = (assetName, byteData);
                 }
             }
         }
+
+        foreach (var category in zhHansAssets.Keys.Union(enUsAssets.Keys))
+        {
+            zhHansAssets.TryGetValue(category, out var zhHans);
+            enUsAssets.TryGetValue(category, out var enUs);
+
+            bool hasZhHans = zhHans.Data != null;
+            var primary = hasZhHans ? zhHans : enUs;
+            byte[]? secondary = hasZhHans && enUs.Data != null ? enUs.Data : null;
+
+            var localizationFile = Path.Combine(localizationFolder, $"{category}.json");
+            SyncJsonFiles(primary.Data, secondary, localizationFile, primary.AssetName);
+        }
     }
 
-    private string? ExtractCategoryFromZhHans(string assetName)
+    private string? ExtractCategory(string assetName, string langCode)
     {
-        if (assetName.StartsWith("zh-Hans."))
+        if (assetName.StartsWith(langCode + "."))
         {
-            var rest = assetName["zh-Hans.".Length..];
+            var rest = assetName[(langCode.Length + 1)..];
             var dotIndex = rest.IndexOf('.');
             if (dotIndex > 0)
             {
@@ -785,11 +811,11 @@ public class UnpackBundle
             }
             return rest;
         }
-        else if (assetName.Equals("zh-Hans", StringComparison.OrdinalIgnoreCase))
+        else if (assetName.Equals(langCode, StringComparison.OrdinalIgnoreCase))
         {
             return "Base";
         }
-        else if (assetName.StartsWith("zh-Hans"))
+        else if (assetName.StartsWith(langCode))
         {
             return "Base";
         }
@@ -797,32 +823,52 @@ public class UnpackBundle
         return null;
     }
 
-    private void SyncJsonFiles(byte[] zhHansData, string localizationFile, string assetName)
+    private void SyncJsonFiles(byte[] primaryData, byte[]? secondaryData, string localizationFile, string assetName)
     {
         try
         {
-            string zhHansJson = Encoding.UTF8.GetString(zhHansData);
-            var zhHansObj = Newtonsoft.Json.Linq.JObject.Parse(zhHansJson);
+            var primaryObj = Newtonsoft.Json.Linq.JObject.Parse(DecodeJson(primaryData));
+
+            Newtonsoft.Json.Linq.JObject? secondaryObj = null;
+            if (secondaryData != null)
+            {
+                secondaryObj = Newtonsoft.Json.Linq.JObject.Parse(DecodeJson(secondaryData));
+            }
 
             if (!File.Exists(localizationFile))
             {
-                File.WriteAllBytes(localizationFile, zhHansData);
-                Console.WriteLine($"Created {Path.GetFileName(localizationFile)} from {assetName}");
+                if (secondaryObj == null)
+                {
+                    File.WriteAllBytes(localizationFile, primaryData);
+                    Console.WriteLine($"Created {Path.GetFileName(localizationFile)} from {assetName}");
+                }
+                else
+                {
+                    int createdCount = 0;
+                    int createdFromEnUs = 0;
+                    int createdRemoved = 0;
+                    var createdObj = new Newtonsoft.Json.Linq.JObject();
+                    SyncToken(primaryObj, secondaryObj, createdObj, ref createdCount, ref createdFromEnUs, ref createdRemoved);
+                    File.WriteAllText(localizationFile, Newtonsoft.Json.JsonConvert.SerializeObject(createdObj, Newtonsoft.Json.Formatting.Indented));
+                    Console.WriteLine($"Created {Path.GetFileName(localizationFile)} from {assetName} (+{createdCount})");
+                }
                 return;
             }
 
             string localizationJson = File.ReadAllText(localizationFile);
-            var localizationObj = Newtonsoft.Json.Linq.JObject.Parse(localizationJson);
+            var localizationObj = Newtonsoft.Json.Linq.JObject.Parse(DecodeJson(localizationJson));
 
             int addedCount = 0;
+            int addedFromEnUs = 0;
             int removedCount = 0;
-            SyncToken(zhHansObj, localizationObj, ref addedCount, ref removedCount);
+            SyncToken(primaryObj, secondaryObj, localizationObj, ref addedCount, ref addedFromEnUs, ref removedCount);
 
             if (addedCount > 0 || removedCount > 0)
             {
                 string outputJson = Newtonsoft.Json.JsonConvert.SerializeObject(localizationObj, Newtonsoft.Json.Formatting.Indented);
                 File.WriteAllText(localizationFile, outputJson);
-                Console.WriteLine($"Synced {assetName} -> {Path.GetFileName(localizationFile)}: +{addedCount}, -{removedCount}");
+                var enNote = addedFromEnUs > 0 ? $"（其中 {addedFromEnUs} 个仅英文有，值暂为英文，需翻译）" : "";
+                Console.WriteLine($"Synced {assetName} -> {Path.GetFileName(localizationFile)}: +{addedCount}{enNote}, -{removedCount}");
             }
             else
             {
@@ -835,51 +881,73 @@ public class UnpackBundle
         }
     }
 
-    // 递归键级同步：以 data.unity3d 导出的 zh-Hans JSON 为"键"的权威来源
-    //  - 本地缺失的键（含深层，如 ItemName.DirtBlock）→ 从 zh-Hans 补齐（初始值=游戏官方中文，译者再改）
-    //  - 本地多余的键（含深层，如 ItemName.OldKey）→ 删除
+    private static string DecodeJson(byte[] data) => StripBom(Encoding.UTF8.GetString(data));
+
+    private static string DecodeJson(string text) => StripBom(text);
+
+    private static string StripBom(string text) => text.Length > 0 && text[0] == '\uFEFF' ? text[1..] : text;
+
+    // 递归键级同步：键集合 = zh-Hans ∪ en-US（en-US 独有的键在构建时仍需存在，否则游戏中会显示键名）
+    //  - 本地缺失的键（含深层，如 ItemName.DirtBlock）→ 优先取 zh-Hans 官方中文，其次取 en-US 英文占位
+    //  - 本地多余的键（含深层，如 ItemName.OldKey）→ 删除（仅当两个语言都没有该键）
     //  - 叶子键值不同 → 保留本地已有翻译，不覆盖
-    //  - 结构不一致（叶子/对象互换）→ 以 zh-Hans 为准，整棵替换（不计数）
-    private static void SyncToken(Newtonsoft.Json.Linq.JObject source, Newtonsoft.Json.Linq.JObject target, ref int added, ref int removed)
+    //  - 结构不一致（叶子/对象互换）→ 以 zh-Hans 为准（无 zh-Hans 时用 en-US），整棵替换（不计数）
+    private static void SyncToken(Newtonsoft.Json.Linq.JObject source, Newtonsoft.Json.Linq.JObject? secondary, Newtonsoft.Json.Linq.JObject target, ref int added, ref int addedFromSecondary, ref int removed)
     {
-        // 1) 先删：target 有、source 没有的键（整棵子树删除）
+        // 1) 先删：target 有、两个语言都没有的键（整棵子树删除）
         foreach (var prop in target.Properties().ToList())
         {
-            if (source[prop.Name] == null)
+            if (source[prop.Name] == null && secondary?[prop.Name] == null)
             {
                 prop.Remove();
                 removed++;
             }
         }
 
-        // 2) 再同步共有键：都是对象则递归深入；结构不一致时以 source 为准
+        // 2) 再同步共有键：都是对象则递归深入；结构不一致时以 source（zh-Hans）为准
         foreach (var prop in target.Properties().ToList())
         {
             var sourceProp = source[prop.Name];
-            if (sourceProp == null)
+            var isFromSecondary = sourceProp == null;
+            var effectiveSource = sourceProp ?? secondary?[prop.Name];
+            if (effectiveSource == null)
             {
                 continue;
             }
 
             if (prop.Value is Newtonsoft.Json.Linq.JObject targetObj &&
-                sourceProp is Newtonsoft.Json.Linq.JObject sourceObj)
+                effectiveSource is Newtonsoft.Json.Linq.JObject sourceObj)
             {
-                SyncToken(sourceObj, targetObj, ref added, ref removed);
+                SyncToken(sourceObj, isFromSecondary ? null : secondary?[prop.Name] as Newtonsoft.Json.Linq.JObject, targetObj, ref added, ref addedFromSecondary, ref removed);
             }
-            else if (prop.Value.Type != sourceProp.Type)
+            else if (prop.Value.Type != effectiveSource.Type)
             {
-                // 游戏改了结构（叶子↔对象）：整棵换成 data.unity3d 的
-                prop.Value = sourceProp.DeepClone();
+                // 游戏改了结构（叶子↔对象）：整棵换成权威来源的
+                prop.Value = effectiveSource.DeepClone();
             }
         }
 
-        // 3) 最后补：source 有、target 没有的键
+        // 3) 最后补：source 有、target 没有的键（官方中文）
         foreach (var prop in source.Properties())
         {
             if (target[prop.Name] == null)
             {
                 target[prop.Name] = prop.Value.DeepClone();
                 added++;
+            }
+        }
+
+        // 4) 再补：仅 en-US 有、target 也没有的键（英文占位，待翻译）
+        if (secondary != null)
+        {
+            foreach (var prop in secondary.Properties())
+            {
+                if (source[prop.Name] == null && target[prop.Name] == null)
+                {
+                    target[prop.Name] = prop.Value.DeepClone();
+                    added++;
+                    addedFromSecondary++;
+                }
             }
         }
     }

@@ -96,19 +96,21 @@ localization/
 
 ### 4. 差异同步
 
-从游戏更新后的 zh-Hans 语言文件与 localization 文件夹进行对比，自动添加新内容、删除过时内容：
+从游戏更新后的 zh-Hans / en-US 语言文件与 localization 文件夹进行对比，自动添加新内容、删除过时内容：
 
 ```bash
 UnpackTerrariaTextAsset.exe -diff <data.unity3d路径> <本地化文件夹路径>
 ```
 
-**此命令会（键级、递归同步，以 data.unity3d 为权威）：**
-1. 读取 data.unity3d 中的 zh-Hans 语言文件
+**此命令会（键级、递归同步，键集合 = zh-Hans ∪ en-US）：**
+1. 读取 data.unity3d 中的 zh-Hans 与 en-US 语言文件
 2. 与 localization 文件夹中的对应文件逐键（含多层嵌套，如 `ItemName.DirtBlock`）对比
-3. 添加 zh-Hans 有但 localization 没有的键（深层缺失也补，初始值为游戏官方中文）
-4. 删除 localization 有但 zh-Hans 没有的键（深层多余也删）
+3. 添加缺失的键（深层缺失也补）：优先使用 zh-Hans 官方中文；仅 en-US 有、官方中文未翻译的键使用英文占位，并在输出中标注「需翻译」
+4. 删除 localization 有、但两个语言都没有的键（深层多余也删）
 5. 已有翻译的键值保持不变，不会被官方文本覆盖
 6. 保存更新后的 localization 文件
+
+> 为什么保留英文独有的键：构建时 en-US 资源会被 localization 的 JSON 整体替换。若只按 zh-Hans 同步，官方中文尚未翻译、但游戏仍在使用的英文键会从产物中消失，游戏中将显示为键名（如 `ItemTooltip.Xxx`）。
 
 ### 5. 字体替换
 
